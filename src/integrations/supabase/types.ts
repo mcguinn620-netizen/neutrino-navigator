@@ -14,7 +14,130 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      dining_halls: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          unit_oid: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          unit_oid: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          unit_oid?: number
+        }
+        Relationships: []
+      }
+      food_items: {
+        Row: {
+          allergens: Json
+          created_at: string
+          detail_oid: number
+          dietary_flags: Json
+          id: string
+          name: string
+          nutrients: Json
+          serving_size: string | null
+          station_id: string
+          updated_at: string
+        }
+        Insert: {
+          allergens?: Json
+          created_at?: string
+          detail_oid: number
+          dietary_flags?: Json
+          id?: string
+          name: string
+          nutrients?: Json
+          serving_size?: string | null
+          station_id: string
+          updated_at?: string
+        }
+        Update: {
+          allergens?: Json
+          created_at?: string
+          detail_oid?: number
+          dietary_flags?: Json
+          id?: string
+          name?: string
+          nutrients?: Json
+          serving_size?: string | null
+          station_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "food_items_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scrape_logs: {
+        Row: {
+          id: string
+          items_count: number | null
+          message: string | null
+          scraped_at: string
+          status: string
+        }
+        Insert: {
+          id?: string
+          items_count?: number | null
+          message?: string | null
+          scraped_at?: string
+          status: string
+        }
+        Update: {
+          id?: string
+          items_count?: number | null
+          message?: string | null
+          scraped_at?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      stations: {
+        Row: {
+          created_at: string
+          dining_hall_id: string
+          id: string
+          name: string
+          unit_oid: number
+        }
+        Insert: {
+          created_at?: string
+          dining_hall_id: string
+          id?: string
+          name: string
+          unit_oid: number
+        }
+        Update: {
+          created_at?: string
+          dining_hall_id?: string
+          id?: string
+          name?: string
+          unit_oid?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stations_dining_hall_id_fkey"
+            columns: ["dining_hall_id"]
+            isOneToOne: false
+            referencedRelation: "dining_halls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
