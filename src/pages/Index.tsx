@@ -309,7 +309,7 @@ const Index = () => {
                                               (item.dietary_flags as string[]).map((d, i) => (
                                                 <Badge
                                                   key={i}
-                                                  className="text-xs bg-green-600 hover:bg-green-700 text-white"
+                                                  className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
                                                 >
                                                   <Leaf className="h-3 w-3 mr-1" />
                                                   {String(d)}
