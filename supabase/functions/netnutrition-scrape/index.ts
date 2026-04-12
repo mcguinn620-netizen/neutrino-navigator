@@ -113,15 +113,10 @@ async function postWithSession(
       "Cookie": session.cookies.join("; "),
       "X-Requested-With": "XMLHttpRequest",
       "Accept": "*/*",
-      "Accept-Language": "en-US,en;q=0.9",
       "Referer": BASE_URL,
       "Origin": "http://netnutrition.bsu.edu",
-      "Host": "netnutrition.bsu.edu",
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
     },
     body: formData.toString(),
-    redirect: "follow",
   });
 
   const text = await res.text();
