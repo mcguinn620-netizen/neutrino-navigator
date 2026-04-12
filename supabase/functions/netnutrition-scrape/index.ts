@@ -471,7 +471,6 @@ Deno.serve(async (req) => {
 
         if (!stationError && stationData) {
           totalItems += await processItemPanel(
-            session,
             supabase,
             stationData.id,
             itemPanelHtml,
@@ -530,7 +529,6 @@ Deno.serve(async (req) => {
         // Check if we got items
         if (stationItemHtml && stationItemHtml.includes("cbo_nn_itemHover")) {
           totalItems += await processItemPanel(
-            session,
             supabase,
             stationData.id,
             stationItemHtml,
@@ -560,7 +558,6 @@ Deno.serve(async (req) => {
             );
             if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
               totalItems += await processItemPanel(
-                session,
                 supabase,
                 stationData.id,
                 nestedItemHtml,
