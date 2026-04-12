@@ -332,26 +332,12 @@ function parseNutrients(html: string): Record<string, string> {
   return nutrients;
 }
 
-/** Fetch nutrition label for a food item and upsert into the database. */
-async function scrapeAndUpsertItem(
-  session: SessionState,
+/** Upsert a food item into the database (without fetching nutrition to save time). */
+async function upsertItem(
   supabase: ReturnType<typeof createClient>,
   stationId: string,
   item: ParsedFoodItem,
 ): Promise<void> {
-  let nutrients: Record<string, string> = {};
-
-  try {
-    const nutritionHtml = await postWithSession(
-      session,
-      "/NutritionDetail/ShowItemNutritionLabel",
-      { detailOid: item.detailOid },
-    );
-    nutrients = parseNutrients(nutritionHtml);
-  } catch (e) {
-    console.error(`    Error fetching nutrition for ${item.name}:`, e);
-  }
-
   const { error: itemError } = await supabase.from("food_items").upsert(
     {
       station_id: stationId,
@@ -360,7 +346,6 @@ async function scrapeAndUpsertItem(
       serving_size: item.servingSize || null,
       allergens: item.allergens,
       dietary_flags: item.dietaryFlags,
-      nutrients,
     },
     { onConflict: "detail_oid" },
   );
@@ -370,9 +355,8 @@ async function scrapeAndUpsertItem(
   }
 }
 
-/** Process items from an itemPanel, handling pagination if needed. */
+/** Process items from an itemPanel. */
 async function processItemPanel(
-  session: SessionState,
   supabase: ReturnType<typeof createClient>,
   stationId: string,
   itemPanelHtml: string,
@@ -381,7 +365,7 @@ async function processItemPanel(
   console.log(`    Found ${foodItems.length} food items`);
 
   for (const item of foodItems) {
-    await scrapeAndUpsertItem(session, supabase, stationId, item);
+    await upsertItem(supabase, stationId, item);
   }
   return foodItems.length;
 }
