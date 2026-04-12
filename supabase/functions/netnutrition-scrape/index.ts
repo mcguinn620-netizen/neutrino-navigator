@@ -90,12 +90,20 @@ function extractPanelHtml(
 ): string {
   try {
     const data = JSON.parse(jsonText);
-    if (!data.success || !Array.isArray(data.panels)) return "";
+    if (!data.success || !Array.isArray(data.panels)) {
+      console.log("  extractPanelHtml: not a valid panels response");
+      return "";
+    }
     const panel = data.panels.find(
       (p: { id: string; html: string }) => p.id === panelId,
     );
-    return panel?.html ?? "";
-  } catch {
+    const html = panel?.html ?? "";
+    if (panelId === "childUnitsPanel" && html.length > 0) {
+      console.log("  childUnitsPanel snippet:", html.substring(0, 300));
+    }
+    return html;
+  } catch (e) {
+    console.log("  extractPanelHtml: JSON parse failed, returning raw text. Error:", e);
     // If response is raw HTML (like nutrition label), return as-is
     return jsonText;
   }
