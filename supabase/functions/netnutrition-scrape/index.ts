@@ -24,42 +24,73 @@ interface SessionState {
   cookies: string[];
 }
 
-/** Establish a session with the NetNutrition ASP.NET app and collect cookies. */
-async function initSession(): Promise<SessionState> {
-  // First request to get session cookie
-  const res = await fetch(BASE_URL, {
-    redirect: "follow",
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-  });
-  const cookies: string[] = [];
-
-  // Collect all set-cookie headers
+/** Collect cookies from a response and merge into existing list. */
+function collectCookies(res: Response, cookies: string[]): string[] {
+  const updated = [...cookies];
   const setCookies = res.headers.getSetCookie?.() ?? [];
   for (const c of setCookies) {
-    cookies.push(c.split(";")[0]);
+    const name = c.split("=")[0];
+    const idx = updated.findIndex((x) => x.startsWith(name + "="));
+    const value = c.split(";")[0];
+    if (idx >= 0) {
+      updated[idx] = value;
+    } else {
+      updated.push(value);
+    }
   }
-
-  // Fallback: raw set-cookie header
-  if (cookies.length === 0) {
+  // Fallback for environments without getSetCookie
+  if (setCookies.length === 0) {
     const raw = res.headers.get("set-cookie");
     if (raw) {
       for (const part of raw.split(/,(?=\s*\w+=)/)) {
-        cookies.push(part.split(";")[0].trim());
+        const value = part.split(";")[0].trim();
+        const name = value.split("=")[0];
+        const idx = updated.findIndex((x) => x.startsWith(name + "="));
+        if (idx >= 0) {
+          updated[idx] = value;
+        } else {
+          updated.push(value);
+        }
       }
     }
   }
+  return updated;
+}
 
-  // Ensure the CBORD cookie is present (required by the site)
+/** Establish a session by manually following redirects to capture all cookies. */
+async function initSession(): Promise<SessionState> {
+  let cookies: string[] = [];
+  let url: string = BASE_URL;
+
+  // Follow redirects manually to capture cookies from each hop
+  for (let i = 0; i < 5; i++) {
+    const res = await fetch(url, {
+      redirect: "manual",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Cookie": cookies.join("; "),
+      },
+    });
+    cookies = collectCookies(res, cookies);
+    await res.text(); // consume body
+
+    const location = res.headers.get("location");
+    if (location && res.status >= 300 && res.status < 400) {
+      url = new URL(location, url).href;
+      console.log(`  Redirect ${res.status} → ${url}`);
+    } else {
+      break;
+    }
+  }
+
+  // Ensure the CBORD cookie is present
   const hasCbord = cookies.some((c) => c.startsWith("CBORD.netnutrition2="));
   if (!hasCbord) {
     cookies.push("CBORD.netnutrition2=NNexternalID=1");
   }
 
-  await res.text(); // consume body
   console.log("Session cookies:", cookies.map((c) => c.split("=")[0]).join(", "));
   return { cookies };
 }
