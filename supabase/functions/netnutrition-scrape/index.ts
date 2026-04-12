@@ -142,6 +142,18 @@ function extractPanelHtml(responseText: string, panelId: string): string {
   return responseText;
 }
 
+// Known dining halls with their sidebar unitOids (verified from browser captures)
+const KNOWN_HALLS = [
+  { name: "The Atrium", unitOid: 1 },
+  { name: "Atrium Café", unitOid: 10 },
+  { name: "Noyer", unitOid: 14 },
+  { name: "Student Center Tally Food Court", unitOid: 17 },
+  { name: "North Dining", unitOid: 21 },
+  { name: "Woodworth Commons", unitOid: 27 },
+  { name: "Bookmark Cafe", unitOid: 33 },
+  { name: "Tom John Food Shop", unitOid: 35 },
+];
+
 /** Parse dining halls from the sidebar HTML in the initial page. */
 function parseHallsFromPage(html: string): { name: string; unitOid: number }[] {
   const halls: { name: string; unitOid: number }[] = [];
