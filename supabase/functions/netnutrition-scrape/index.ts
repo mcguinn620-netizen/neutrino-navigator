@@ -133,30 +133,58 @@ async function postWithSession(
   return text;
 }
 
-/** Extract HTML from a specific panel in the JSON response. */
+/** Extract HTML from a specific panel in the JSON response, or from full HTML page. */
 function extractPanelHtml(
-  jsonText: string,
+  responseText: string,
   panelId: string,
 ): string {
+  // Try JSON first
   try {
-    const data = JSON.parse(jsonText);
-    if (!data.success || !Array.isArray(data.panels)) {
-      console.log("  extractPanelHtml: not a valid panels response");
-      return "";
+    const data = JSON.parse(responseText);
+    if (data.success && Array.isArray(data.panels)) {
+      const panel = data.panels.find(
+        (p: { id: string; html: string }) => p.id === panelId,
+      );
+      return panel?.html ?? "";
     }
-    const panel = data.panels.find(
-      (p: { id: string; html: string }) => p.id === panelId,
-    );
-    const html = panel?.html ?? "";
-    if (panelId === "childUnitsPanel" && html.length > 0) {
-      console.log("  childUnitsPanel snippet:", html.substring(0, 300));
-    }
-    return html;
-  } catch (e) {
-    console.log("  extractPanelHtml: JSON parse failed, returning raw text. Error:", e);
-    // If response is raw HTML (like nutrition label), return as-is
-    return jsonText;
+  } catch {
+    // Not JSON — try extracting from full HTML page
   }
+
+  // For full HTML pages, extract content from the panel div
+  const panelDivId = panelId === "childUnitsPanel"
+    ? "cbo_nn_childUnitsPanel"
+    : panelId === "itemPanel"
+    ? "cbo_nn_itemPanel"
+    : panelId;
+
+  // Try to find content by panel div id
+  const divRegex = new RegExp(
+    `id=['"]${panelDivId}['"][^>]*>([\\s\\S]*?)(?=<div[^>]*id=['"]cbo_nn_|$)`,
+    "i",
+  );
+  const divMatch = responseText.match(divRegex);
+  if (divMatch) return divMatch[1];
+
+  // Fallback: for childUnitsPanel, look for the child units section
+  if (panelId === "childUnitsPanel") {
+    const sectionMatch = responseText.match(
+      /class="cbo_nn_childUnitListDiv"[\s\S]*?<\/section>/i,
+    );
+    if (sectionMatch) return sectionMatch[0];
+  }
+
+  // Fallback: for itemPanel, look for the item grid section
+  if (panelId === "itemPanel") {
+    const sectionMatch = responseText.match(
+      /class="cbo_nn_itemGridDiv"[\s\S]*?<\/section>/i,
+    );
+    if (sectionMatch) return sectionMatch[0];
+  }
+
+  // Last resort: return the full response for regex parsing
+  return responseText;
+}
 }
 
 /** Parse station links from childUnitsPanel HTML. */
