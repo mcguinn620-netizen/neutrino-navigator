@@ -26,10 +26,18 @@ interface SessionState {
 
 /** Establish a session with the NetNutrition ASP.NET app and collect cookies. */
 async function initSession(): Promise<SessionState> {
-  const res = await fetch(BASE_URL, { redirect: "follow" });
+  // First request to get session cookie
+  const res = await fetch(BASE_URL, {
+    redirect: "follow",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
   const cookies: string[] = [];
 
-  // Deno's getSetCookie may be available
+  // Collect all set-cookie headers
   const setCookies = res.headers.getSetCookie?.() ?? [];
   for (const c of setCookies) {
     cookies.push(c.split(";")[0]);
@@ -45,7 +53,14 @@ async function initSession(): Promise<SessionState> {
     }
   }
 
+  // Ensure the CBORD cookie is present (required by the site)
+  const hasCbord = cookies.some((c) => c.startsWith("CBORD.netnutrition2="));
+  if (!hasCbord) {
+    cookies.push("CBORD.netnutrition2=NNexternalID=1");
+  }
+
   await res.text(); // consume body
+  console.log("Session cookies:", cookies.map((c) => c.split("=")[0]).join(", "));
   return { cookies };
 }
 
