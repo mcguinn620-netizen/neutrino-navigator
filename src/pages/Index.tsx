@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Search, Filter, Utensils, Leaf, AlertTriangle } from "lucide-react";
+import { RefreshCw, Search, Utensils, Leaf, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import NutritionPanel from "@/components/NutritionPanel";
 import AllergenFilterBar from "@/components/AllergenFilterBar";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -180,6 +181,7 @@ const Index = () => {
                   Updated: {new Date(lastScrape.scraped_at).toLocaleDateString()}
                 </span>
               )}
+              <ThemeToggle />
               <Button
                 onClick={() => scrapeMutation.mutate()}
                 disabled={scrapeMutation.isPending}
