@@ -417,17 +417,21 @@ Deno.serve(async (req) => {
     console.log(`Initial page loaded, length: ${initPageHtml.length}`);
 
     // Discover halls from sidebar
-    const discoveredHalls = parseHallsFromPage(initPageHtml);
+    let discoveredHalls = parseHallsFromPage(initPageHtml);
     console.log(
-      `Discovered ${discoveredHalls.length} dining halls:`,
-      discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
+      `Discovered ${discoveredHalls.length} dining halls from page`,
     );
 
+    // Fall back to known halls if dynamic discovery fails (e.g. site error page)
     if (discoveredHalls.length === 0) {
-      // Log a sample of the page to debug
-      console.log("Page sample (first 2000 chars):", initPageHtml.substring(0, 2000));
-      throw new Error("No dining halls found on the NetNutrition page");
+      console.log("Dynamic discovery failed, using known hall list as fallback");
+      discoveredHalls = KNOWN_HALLS;
     }
+
+    console.log(
+      `Scraping ${discoveredHalls.length} halls:`,
+      discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
+    );
 
     let totalItems = 0;
 
