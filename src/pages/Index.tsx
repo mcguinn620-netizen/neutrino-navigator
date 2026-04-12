@@ -181,6 +181,7 @@ const Index = () => {
                   Updated: {new Date(lastScrape.scraped_at).toLocaleDateString()}
                 </span>
               )}
+              <ThemeToggle />
               <Button
                 onClick={() => scrapeMutation.mutate()}
                 disabled={scrapeMutation.isPending}
