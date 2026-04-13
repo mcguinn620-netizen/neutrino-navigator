@@ -126,6 +126,11 @@ async function postWithSession(
   return text;
 }
 
+/** Check if a response is a Start-up Error page (session lost). */
+function isStartupError(text: string): boolean {
+  return text.includes("NetNutrition Start-up Error") || text.includes("ANA_border");
+}
+
 /** Extract HTML from a specific panel in the JSON response. */
 function extractPanelHtml(responseText: string, panelId: string): string {
   try {
@@ -332,7 +337,7 @@ function parseNutrients(html: string): Record<string, string> {
   return nutrients;
 }
 
-/** Upsert a food item into the database (without fetching nutrition to save time). */
+/** Upsert a food item into the database. */
 async function upsertItem(
   supabase: ReturnType<typeof createClient>,
   stationId: string,
@@ -370,6 +375,26 @@ async function processItemPanel(
   return foodItems.length;
 }
 
+/** POST with session recovery — re-inits session if Start-up Error is returned. */
+async function postWithRetry(
+  session: SessionState,
+  path: string,
+  body: Record<string, string | number>,
+  maxRetries = 2,
+): Promise<string> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const text = await postWithSession(session, path, body);
+    if (!isStartupError(text)) {
+      return text;
+    }
+    console.log(`  Start-up Error detected (attempt ${attempt + 1}), re-initializing session...`);
+    const newSession = await initSession();
+    session.cookies = newSession.cookies;
+  }
+  // Return last response even if still erroring
+  return await postWithSession(session, path, body);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -383,7 +408,7 @@ Deno.serve(async (req) => {
     console.log("Starting NetNutrition scrape...");
 
     // Step 1: Establish session
-    const session = await initSession();
+    let session = await initSession();
     console.log("Session established, cookies:", session.cookies.length);
 
     // Step 2: Load initial page to discover dining halls from sidebar
@@ -400,13 +425,32 @@ Deno.serve(async (req) => {
     const initPageHtml = await initPageRes.text();
     console.log(`Initial page loaded, length: ${initPageHtml.length}`);
 
+    // If initial page is a Start-up Error, re-init session
+    if (isStartupError(initPageHtml)) {
+      console.log("Initial page returned Start-up Error, re-initializing session...");
+      session = await initSession();
+      // Try loading the page again
+      const retryRes = await fetch(BASE_URL, {
+        headers: {
+          "Cookie": session.cookies.join("; "),
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+          "Accept":
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+      session.cookies = collectCookies(retryRes, session.cookies);
+      const retryHtml = await retryRes.text();
+      console.log(`Retry page loaded, length: ${retryHtml.length}`);
+    }
+
     // Discover halls from sidebar
     let discoveredHalls = parseHallsFromPage(initPageHtml);
     console.log(
       `Discovered ${discoveredHalls.length} dining halls from page`,
     );
 
-    // Fall back to known halls if dynamic discovery fails (e.g. site error page)
+    // Fall back to known halls if dynamic discovery fails
     if (discoveredHalls.length === 0) {
       console.log("Dynamic discovery failed, using known hall list as fallback");
       discoveredHalls = KNOWN_HALLS;
@@ -440,11 +484,17 @@ Deno.serve(async (req) => {
       }
 
       // Step 3: Select dining hall → get stations from childUnitsPanel
-      const sidebarResponse = await postWithSession(
+      const sidebarResponse = await postWithRetry(
         session,
         "/Unit/SelectUnitFromSideBar",
         { unitOid: hall.unitOid },
       );
+
+      // If still a Start-up Error after retries, skip this hall
+      if (isStartupError(sidebarResponse)) {
+        console.log(`  Skipping ${hall.name}: persistent Start-up Error after retries`);
+        continue;
+      }
 
       const childUnitsHtml = extractPanelHtml(
         sidebarResponse,
@@ -487,6 +537,76 @@ Deno.serve(async (req) => {
           "  childUnitsHtml sample (first 500 chars):",
           childUnitsHtml.substring(0, 500),
         );
+
+        // Fallback: try selecting this hall as a child unit too
+        console.log(`  Trying SelectUnitFromChildUnitsList as fallback for ${hall.name}...`);
+        const childFallback = await postWithRetry(
+          session,
+          "/Unit/SelectUnitFromChildUnitsList",
+          { unitOid: hall.unitOid },
+        );
+
+        if (!isStartupError(childFallback)) {
+          const fallbackItemHtml = extractPanelHtml(childFallback, "itemPanel");
+          const fallbackChildHtml = extractPanelHtml(childFallback, "childUnitsPanel");
+
+          if (fallbackItemHtml && fallbackItemHtml.includes("cbo_nn_itemHover")) {
+            console.log(`  Fallback: found items directly for ${hall.name}`);
+            const { data: stationData, error: stationError } = await supabase
+              .from("stations")
+              .upsert(
+                {
+                  dining_hall_id: hallData.id,
+                  name: hall.name,
+                  unit_oid: hall.unitOid,
+                },
+                { onConflict: "unit_oid" },
+              )
+              .select("id")
+              .single();
+
+            if (!stationError && stationData) {
+              totalItems += await processItemPanel(
+                supabase,
+                stationData.id,
+                fallbackItemHtml,
+              );
+            }
+          } else {
+            const fallbackStations = parseStations(fallbackChildHtml);
+            console.log(`  Fallback: found ${fallbackStations.length} child units for ${hall.name}`);
+            for (const fStation of fallbackStations) {
+              console.log(`    Fallback station: ${fStation.name} (${fStation.unitOid})`);
+              const { data: stationData, error: stationError } = await supabase
+                .from("stations")
+                .upsert(
+                  {
+                    dining_hall_id: hallData.id,
+                    name: fStation.name,
+                    unit_oid: fStation.unitOid,
+                  },
+                  { onConflict: "unit_oid" },
+                )
+                .select("id")
+                .single();
+
+              if (stationError || !stationData) continue;
+
+              const nestedRes = await postWithRetry(
+                session,
+                "/Unit/SelectUnitFromChildUnitsList",
+                { unitOid: fStation.unitOid },
+              );
+              if (isStartupError(nestedRes)) continue;
+
+              const nestedItemHtml = extractPanelHtml(nestedRes, "itemPanel");
+              if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
+                totalItems += await processItemPanel(supabase, stationData.id, nestedItemHtml);
+              }
+            }
+          }
+        }
+
         continue;
       }
 
@@ -518,11 +638,16 @@ Deno.serve(async (req) => {
         }
 
         // Step 4: Select station → get food items from itemPanel
-        const childResponse = await postWithSession(
+        const childResponse = await postWithRetry(
           session,
           "/Unit/SelectUnitFromChildUnitsList",
           { unitOid: station.unitOid },
         );
+
+        if (isStartupError(childResponse)) {
+          console.log(`    Skipping station ${station.name}: Start-up Error`);
+          continue;
+        }
 
         const stationItemHtml = extractPanelHtml(childResponse, "itemPanel");
 
@@ -547,11 +672,12 @@ Deno.serve(async (req) => {
             `    Nested stations found: ${nestedStations.length}, drilling down...`,
           );
           for (const nested of nestedStations) {
-            const nestedResponse = await postWithSession(
+            const nestedResponse = await postWithRetry(
               session,
               "/Unit/SelectUnitFromChildUnitsList",
               { unitOid: nested.unitOid },
             );
+            if (isStartupError(nestedResponse)) continue;
             const nestedItemHtml = extractPanelHtml(
               nestedResponse,
               "itemPanel",
