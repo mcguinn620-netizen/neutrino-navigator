@@ -267,26 +267,21 @@ function parseFoodItems(html: string): ParsedFoodItem[] {
 function parseCategoriesFromItemPanel(html: string): ParsedCategory[] {
   const categories: ParsedCategory[] = [];
 
-  const tableMatch = html.match(
-    /<table[^>]*class=['"][^'"]*cbo_nn_itemGridTable[^'"]*['"][^>]*>([\s\S]*?)<\/table>/i,
-  );
-  if (!tableMatch) {
-    return categories;
-  }
-
-  const tableHtml = tableMatch[1];
-  const rowRegex = /<tr[\s\S]*?<\/tr>/gi;
+  // Scan rows directly from the full panel HTML (no strict <table> wrapper requirement).
+  const rowRegex = /<tr\b[\s\S]*?<\/tr>/gi;
   let rowMatch;
-
   let currentCategory: ParsedCategory | null = null;
+  let sawAnyGroupRow = false;
 
-  while ((rowMatch = rowRegex.exec(tableHtml)) !== null) {
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
     const rowHtml = rowMatch[0];
 
+    // Group/category header row — class can be on <tr> or inner <td>.
     const groupMatch = rowHtml.match(
-      /<td[^>]*class=['"][^'"]*cbo_nn_itemGroupRow[^'"]*['"][^>]*>([\s\S]*?)<\/td>/i,
+      /class=['"][^'"]*cbo_nn_itemGroupRow[^'"]*['"][^>]*>([\s\S]*?)<\/(?:td|tr)>/i,
     );
     if (groupMatch) {
+      sawAnyGroupRow = true;
       const categoryName = groupMatch[1]
         .replace(/<[^>]+>/g, " ")
         .replace(/&nbsp;/g, " ")
@@ -312,6 +307,9 @@ function parseCategoriesFromItemPanel(html: string): ParsedCategory[] {
       currentCategory.items.push(item);
     }
   }
+
+  // If we never saw a real category header row, signal "no grouping" so caller can fall back.
+  if (!sawAnyGroupRow) return [];
 
   return categories.filter((c) => c.items.length > 0);
 }
