@@ -7,8 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Search, Utensils, Leaf, AlertTriangle } from "lucide-react";
+import { RefreshCw, Search, Utensils, Leaf, AlertTriangle, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import NutritionPanel from "@/components/NutritionPanel";
 import AllergenFilterBar from "@/components/AllergenFilterBar";
@@ -313,80 +314,83 @@ const Index = () => {
                             ) : (
                               <div className="space-y-4">
                                 {groupItemsByCategory(stationItems, station.id).map((group) => (
-                                  <div key={group.id}>
-                                    <div className="flex items-center gap-2 mb-2 pb-1 border-b">
+                                  <Collapsible key={group.id} defaultOpen className="group/cat">
+                                    <CollapsibleTrigger className="w-full flex items-center gap-2 mb-2 pb-1 border-b hover:bg-muted/30 rounded-sm px-1 transition-colors">
+                                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=closed]/cat:-rotate-90 text-muted-foreground" />
                                       <h4 className="text-sm font-semibold text-foreground uppercase tracking-wide">
                                         {group.name}
                                       </h4>
                                       <Badge variant="outline" className="text-xs">
                                         {group.items.length}
                                       </Badge>
-                                    </div>
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          <TableHead>Item</TableHead>
-                                          <TableHead>Serving</TableHead>
-                                          <TableHead>Allergens</TableHead>
-                                          <TableHead>Dietary</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {group.items.map((item) => (
-                                          <>
-                                            <TableRow
-                                              key={item.id}
-                                              className="cursor-pointer hover:bg-muted/50"
-                                              onClick={() =>
-                                                setExpandedItem(expandedItem === item.id ? null : item.id)
-                                              }
-                                            >
-                                              <TableCell className="font-medium">{item.name}</TableCell>
-                                              <TableCell className="text-sm text-muted-foreground">
-                                                {item.serving_size || "—"}
-                                              </TableCell>
-                                              <TableCell>
-                                                <div className="flex flex-wrap gap-1">
-                                                  {Array.isArray(item.allergens) &&
-                                                    (item.allergens as string[]).map((a, i) => (
-                                                      <Badge
-                                                        key={i}
-                                                        variant="destructive"
-                                                        className="text-xs"
-                                                      >
-                                                        <AlertTriangle className="h-3 w-3 mr-1" />
-                                                        {typeof a === 'string' ? a.split("(")[0].trim() : String(a)}
-                                                      </Badge>
-                                                    ))}
-                                                </div>
-                                              </TableCell>
-                                              <TableCell>
-                                                <div className="flex flex-wrap gap-1">
-                                                  {Array.isArray(item.dietary_flags) &&
-                                                    (item.dietary_flags as string[]).map((d, i) => (
-                                                      <Badge
-                                                        key={i}
-                                                        className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-                                                      >
-                                                        <Leaf className="h-3 w-3 mr-1" />
-                                                        {String(d)}
-                                                      </Badge>
-                                                    ))}
-                                                </div>
-                                              </TableCell>
-                                            </TableRow>
-                                            {expandedItem === item.id && (
-                                              <TableRow key={`${item.id}-nutrition`}>
-                                                <TableCell colSpan={4} className="p-0">
-                                                  <NutritionPanel nutrients={item.nutrients} />
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>Item</TableHead>
+                                            <TableHead>Serving</TableHead>
+                                            <TableHead>Allergens</TableHead>
+                                            <TableHead>Dietary</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {group.items.map((item) => (
+                                            <>
+                                              <TableRow
+                                                key={item.id}
+                                                className="cursor-pointer hover:bg-muted/50"
+                                                onClick={() =>
+                                                  setExpandedItem(expandedItem === item.id ? null : item.id)
+                                                }
+                                              >
+                                                <TableCell className="font-medium">{item.name}</TableCell>
+                                                <TableCell className="text-sm text-muted-foreground">
+                                                  {item.serving_size || "—"}
+                                                </TableCell>
+                                                <TableCell>
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {Array.isArray(item.allergens) &&
+                                                      (item.allergens as string[]).map((a, i) => (
+                                                        <Badge
+                                                          key={i}
+                                                          variant="destructive"
+                                                          className="text-xs"
+                                                        >
+                                                          <AlertTriangle className="h-3 w-3 mr-1" />
+                                                          {typeof a === 'string' ? a.split("(")[0].trim() : String(a)}
+                                                        </Badge>
+                                                      ))}
+                                                  </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                  <div className="flex flex-wrap gap-1">
+                                                    {Array.isArray(item.dietary_flags) &&
+                                                      (item.dietary_flags as string[]).map((d, i) => (
+                                                        <Badge
+                                                          key={i}
+                                                          className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+                                                        >
+                                                          <Leaf className="h-3 w-3 mr-1" />
+                                                          {String(d)}
+                                                        </Badge>
+                                                      ))}
+                                                  </div>
                                                 </TableCell>
                                               </TableRow>
-                                            )}
-                                          </>
-                                        ))}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
+                                              {expandedItem === item.id && (
+                                                <TableRow key={`${item.id}-nutrition`}>
+                                                  <TableCell colSpan={4} className="p-0">
+                                                    <NutritionPanel nutrients={item.nutrients} />
+                                                  </TableCell>
+                                                </TableRow>
+                                              )}
+                                            </>
+                                          ))}
+                                        </TableBody>
+                                      </Table>
+                                    </CollapsibleContent>
+                                  </Collapsible>
                                 ))}
                               </div>
                             )}
