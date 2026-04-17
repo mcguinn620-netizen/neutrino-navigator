@@ -389,9 +389,12 @@ function parseNutrients(html: string): Record<string, string> {
   return nutrients;
 }
 
+// deno-lint-ignore no-explicit-any
+type SupabaseAny = any;
+
 /** Upsert a category into the database. */
 async function upsertCategory(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAny,
   stationId: string,
   categoryName: string,
 ): Promise<string | null> {
@@ -412,12 +415,12 @@ async function upsertCategory(
     return null;
   }
 
-  return data?.id ?? null;
+  return (data?.id as string | undefined) ?? null;
 }
 
 /** Upsert a food item into the database. */
 async function upsertItem(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAny,
   stationId: string,
   categoryId: string | null,
   item: ParsedFoodItem,
@@ -442,7 +445,7 @@ async function upsertItem(
 
 /** Process items from an itemPanel, using cbo_nn_itemGroupRow as category key when present. */
 async function processItemPanel(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseAny,
   stationId: string,
   itemPanelHtml: string,
 ): Promise<number> {
