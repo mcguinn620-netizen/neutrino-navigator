@@ -32,11 +32,18 @@ interface FoodItem {
   id: string;
   name: string;
   station_id: string;
+  category_id: string | null;
   serving_size: string | null;
   allergens: Json;
   dietary_flags: Json;
   nutrients: Json;
   detail_oid: number;
+}
+
+interface MenuCategory {
+  id: string;
+  name: string;
+  station_id: string;
 }
 
 const Index = () => {
@@ -90,6 +97,22 @@ const Index = () => {
         .order("name");
       if (error) throw error;
       return data as FoodItem[];
+    },
+    enabled: stationIds.length > 0,
+  });
+
+  // Fetch menu categories for all stations of selected hall
+  const { data: categories = [] } = useQuery({
+    queryKey: ["menu-categories", stationIds],
+    queryFn: async () => {
+      if (stationIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("menu_categories")
+        .select("*")
+        .in("station_id", stationIds)
+        .order("name");
+      if (error) throw error;
+      return data as MenuCategory[];
     },
     enabled: stationIds.length > 0,
   });
@@ -161,6 +184,27 @@ const Index = () => {
 
   const getItemsByStation = (stationId: string) =>
     filteredItems.filter((item) => item.station_id === stationId);
+
+  // Group station items by category. Items without a category go into "Other".
+  const groupItemsByCategory = (items: FoodItem[], stationId: string) => {
+    const stationCategories = categories.filter((c) => c.station_id === stationId);
+    const groups: { id: string; name: string; items: FoodItem[] }[] = [];
+
+    for (const cat of stationCategories) {
+      const catItems = items.filter((i) => i.category_id === cat.id);
+      if (catItems.length > 0) {
+        groups.push({ id: cat.id, name: cat.name, items: catItems });
+      }
+    }
+
+    const uncategorized = items.filter((i) => !i.category_id);
+    if (uncategorized.length > 0) {
+      const label = stationCategories.length > 0 ? "Other" : "All Items";
+      groups.push({ id: "__uncategorized__", name: label, items: uncategorized });
+    }
+
+    return groups;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -267,70 +311,84 @@ const Index = () => {
                                 No items match your filters
                               </p>
                             ) : (
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead>Item</TableHead>
-                                    <TableHead>Serving</TableHead>
-                                    <TableHead>Allergens</TableHead>
-                                    <TableHead>Dietary</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {stationItems.map((item) => (
-                                    <>
-                                      <TableRow
-                                        key={item.id}
-                                        className="cursor-pointer hover:bg-muted/50"
-                                        onClick={() =>
-                                          setExpandedItem(expandedItem === item.id ? null : item.id)
-                                        }
-                                      >
-                                        <TableCell className="font-medium">{item.name}</TableCell>
-                                        <TableCell className="text-sm text-muted-foreground">
-                                          {item.serving_size || "—"}
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="flex flex-wrap gap-1">
-                                            {Array.isArray(item.allergens) &&
-                                              (item.allergens as string[]).map((a, i) => (
-                                                <Badge
-                                                  key={i}
-                                                  variant="destructive"
-                                                  className="text-xs"
-                                                >
-                                                  <AlertTriangle className="h-3 w-3 mr-1" />
-                                                  {typeof a === 'string' ? a.split("(")[0].trim() : String(a)}
-                                                </Badge>
-                                              ))}
-                                          </div>
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="flex flex-wrap gap-1">
-                                            {Array.isArray(item.dietary_flags) &&
-                                              (item.dietary_flags as string[]).map((d, i) => (
-                                                <Badge
-                                                  key={i}
-                                                  className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-                                                >
-                                                  <Leaf className="h-3 w-3 mr-1" />
-                                                  {String(d)}
-                                                </Badge>
-                                              ))}
-                                          </div>
-                                        </TableCell>
-                                      </TableRow>
-                                      {expandedItem === item.id && (
-                                        <TableRow key={`${item.id}-nutrition`}>
-                                          <TableCell colSpan={4} className="p-0">
-                                            <NutritionPanel nutrients={item.nutrients} />
-                                          </TableCell>
+                              <div className="space-y-4">
+                                {groupItemsByCategory(stationItems, station.id).map((group) => (
+                                  <div key={group.id}>
+                                    <div className="flex items-center gap-2 mb-2 pb-1 border-b">
+                                      <h4 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+                                        {group.name}
+                                      </h4>
+                                      <Badge variant="outline" className="text-xs">
+                                        {group.items.length}
+                                      </Badge>
+                                    </div>
+                                    <Table>
+                                      <TableHeader>
+                                        <TableRow>
+                                          <TableHead>Item</TableHead>
+                                          <TableHead>Serving</TableHead>
+                                          <TableHead>Allergens</TableHead>
+                                          <TableHead>Dietary</TableHead>
                                         </TableRow>
-                                      )}
-                                    </>
-                                  ))}
-                                </TableBody>
-                              </Table>
+                                      </TableHeader>
+                                      <TableBody>
+                                        {group.items.map((item) => (
+                                          <>
+                                            <TableRow
+                                              key={item.id}
+                                              className="cursor-pointer hover:bg-muted/50"
+                                              onClick={() =>
+                                                setExpandedItem(expandedItem === item.id ? null : item.id)
+                                              }
+                                            >
+                                              <TableCell className="font-medium">{item.name}</TableCell>
+                                              <TableCell className="text-sm text-muted-foreground">
+                                                {item.serving_size || "—"}
+                                              </TableCell>
+                                              <TableCell>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {Array.isArray(item.allergens) &&
+                                                    (item.allergens as string[]).map((a, i) => (
+                                                      <Badge
+                                                        key={i}
+                                                        variant="destructive"
+                                                        className="text-xs"
+                                                      >
+                                                        <AlertTriangle className="h-3 w-3 mr-1" />
+                                                        {typeof a === 'string' ? a.split("(")[0].trim() : String(a)}
+                                                      </Badge>
+                                                    ))}
+                                                </div>
+                                              </TableCell>
+                                              <TableCell>
+                                                <div className="flex flex-wrap gap-1">
+                                                  {Array.isArray(item.dietary_flags) &&
+                                                    (item.dietary_flags as string[]).map((d, i) => (
+                                                      <Badge
+                                                        key={i}
+                                                        className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
+                                                      >
+                                                        <Leaf className="h-3 w-3 mr-1" />
+                                                        {String(d)}
+                                                      </Badge>
+                                                    ))}
+                                                </div>
+                                              </TableCell>
+                                            </TableRow>
+                                            {expandedItem === item.id && (
+                                              <TableRow key={`${item.id}-nutrition`}>
+                                                <TableCell colSpan={4} className="p-0">
+                                                  <NutritionPanel nutrients={item.nutrients} />
+                                                </TableCell>
+                                              </TableRow>
+                                            )}
+                                          </>
+                                        ))}
+                                      </TableBody>
+                                    </Table>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </AccordionContent>
                         </AccordionItem>
