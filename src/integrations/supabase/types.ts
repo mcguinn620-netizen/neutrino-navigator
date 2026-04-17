@@ -38,6 +38,7 @@ export type Database = {
       food_items: {
         Row: {
           allergens: Json
+          category_id: string | null
           created_at: string
           detail_oid: number
           dietary_flags: Json
@@ -50,6 +51,7 @@ export type Database = {
         }
         Insert: {
           allergens?: Json
+          category_id?: string | null
           created_at?: string
           detail_oid: number
           dietary_flags?: Json
@@ -62,6 +64,7 @@ export type Database = {
         }
         Update: {
           allergens?: Json
+          category_id?: string | null
           created_at?: string
           detail_oid?: number
           dietary_flags?: Json
@@ -74,7 +77,43 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "food_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "menu_categories"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "food_items_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      menu_categories: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          station_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          station_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          station_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "menu_categories_station_id_fkey"
             columns: ["station_id"]
             isOneToOne: false
             referencedRelation: "stations"
