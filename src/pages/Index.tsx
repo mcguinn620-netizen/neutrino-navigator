@@ -185,6 +185,27 @@ const Index = () => {
   const getItemsByStation = (stationId: string) =>
     filteredItems.filter((item) => item.station_id === stationId);
 
+  // Group station items by category. Items without a category go into "Other".
+  const groupItemsByCategory = (items: FoodItem[], stationId: string) => {
+    const stationCategories = categories.filter((c) => c.station_id === stationId);
+    const groups: { id: string; name: string; items: FoodItem[] }[] = [];
+
+    for (const cat of stationCategories) {
+      const catItems = items.filter((i) => i.category_id === cat.id);
+      if (catItems.length > 0) {
+        groups.push({ id: cat.id, name: cat.name, items: catItems });
+      }
+    }
+
+    const uncategorized = items.filter((i) => !i.category_id);
+    if (uncategorized.length > 0) {
+      const label = stationCategories.length > 0 ? "Other" : "All Items";
+      groups.push({ id: "__uncategorized__", name: label, items: uncategorized });
+    }
+
+    return groups;
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
