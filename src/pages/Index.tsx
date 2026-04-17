@@ -32,11 +32,18 @@ interface FoodItem {
   id: string;
   name: string;
   station_id: string;
+  category_id: string | null;
   serving_size: string | null;
   allergens: Json;
   dietary_flags: Json;
   nutrients: Json;
   detail_oid: number;
+}
+
+interface MenuCategory {
+  id: string;
+  name: string;
+  station_id: string;
 }
 
 const Index = () => {
