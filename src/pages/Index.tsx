@@ -101,6 +101,22 @@ const Index = () => {
     enabled: stationIds.length > 0,
   });
 
+  // Fetch menu categories for all stations of selected hall
+  const { data: categories = [] } = useQuery({
+    queryKey: ["menu-categories", stationIds],
+    queryFn: async () => {
+      if (stationIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("menu_categories")
+        .select("*")
+        .in("station_id", stationIds)
+        .order("name");
+      if (error) throw error;
+      return data as MenuCategory[];
+    },
+    enabled: stationIds.length > 0,
+  });
+
   // Fetch last scrape log
   const { data: lastScrape } = useQuery({
     queryKey: ["last-scrape"],
