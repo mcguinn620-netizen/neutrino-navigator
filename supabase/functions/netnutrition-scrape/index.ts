@@ -447,6 +447,18 @@ async function processItemPanel(
   stationId: string,
   itemPanelHtml: string,
 ): Promise<number> {
+  // Debug: log a snippet around the first group/course marker to verify class names.
+  const probeIdx = itemPanelHtml.search(/itemGroupRow|courseItem|cbo_nn_item/i);
+  if (probeIdx >= 0) {
+    const snippet = itemPanelHtml.substring(
+      Math.max(0, probeIdx - 80),
+      probeIdx + 240,
+    );
+    console.log(`    HTML probe @${probeIdx}: ${snippet.replace(/\s+/g, " ")}`);
+  } else {
+    console.log(`    HTML probe: no itemGroupRow/courseItem/cbo_nn_item match`);
+  }
+
   const categories = parseCategoriesFromItemPanel(itemPanelHtml);
 
   if (categories.length > 0) {
