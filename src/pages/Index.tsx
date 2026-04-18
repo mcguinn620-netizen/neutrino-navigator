@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import FoodCard from "@/components/FoodCard";
 import FilterSheet from "@/components/FilterSheet";
 import { cn } from "@/lib/utils";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
