@@ -1,12 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { RefreshCw, Search, Utensils, ChevronDown, X } from "lucide-react";
+import { RefreshCw, Search, Utensils, ChevronRight, ChevronLeft, X, Building2, Store, FolderOpen } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import FoodCard from "@/components/FoodCard";
@@ -15,18 +14,9 @@ import { cn } from "@/lib/utils";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-interface DiningHall {
-  id: string;
-  name: string;
-  unit_oid: number;
-}
-
-interface Station {
-  id: string;
-  name: string;
-  dining_hall_id: string;
-}
-
+interface DiningHall { id: string; name: string; unit_oid: number; }
+interface Station { id: string; name: string; dining_hall_id: string; }
+interface MenuCategory { id: string; name: string; station_id: string; }
 interface FoodItem {
   id: string;
   name: string;
@@ -39,14 +29,14 @@ interface FoodItem {
   detail_oid: number;
 }
 
-interface MenuCategory {
-  id: string;
-  name: string;
-  station_id: string;
-}
+type View =
+  | { level: "halls" }
+  | { level: "stations"; hallId: string }
+  | { level: "categories"; hallId: string; stationId: string }
+  | { level: "foods"; hallId: string; stationId: string; categoryId: string };
 
 const Index = () => {
-  const [selectedHall, setSelectedHall] = useState<string | null>(null);
+  const [view, setView] = useState<View>({ level: "halls" });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedAllergens, setSelectedAllergens] = useState<string[]>([]);
@@ -64,53 +54,31 @@ const Index = () => {
     },
   });
 
-  const activeHall = selectedHall || halls[0]?.id;
-  const activeHallName = halls.find((h) => h.id === activeHall)?.name;
-
   const { data: stations = [] } = useQuery({
-    queryKey: ["stations", activeHall],
+    queryKey: ["stations", "all"],
     queryFn: async () => {
-      if (!activeHall) return [];
-      const { data, error } = await supabase
-        .from("stations")
-        .select("*")
-        .eq("dining_hall_id", activeHall)
-        .order("name");
+      const { data, error } = await supabase.from("stations").select("*").order("name");
       if (error) throw error;
       return data as Station[];
     },
-    enabled: !!activeHall,
-  });
-
-  const stationIds = stations.map((s) => s.id);
-  const { data: foodItems = [] } = useQuery({
-    queryKey: ["food-items", stationIds],
-    queryFn: async () => {
-      if (stationIds.length === 0) return [];
-      const { data, error } = await supabase
-        .from("food_items")
-        .select("*")
-        .in("station_id", stationIds)
-        .order("name");
-      if (error) throw error;
-      return data as FoodItem[];
-    },
-    enabled: stationIds.length > 0,
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["menu-categories", stationIds],
+    queryKey: ["menu-categories", "all"],
     queryFn: async () => {
-      if (stationIds.length === 0) return [];
-      const { data, error } = await supabase
-        .from("menu_categories")
-        .select("*")
-        .in("station_id", stationIds)
-        .order("name");
+      const { data, error } = await supabase.from("menu_categories").select("*").order("name");
       if (error) throw error;
       return data as MenuCategory[];
     },
-    enabled: stationIds.length > 0,
+  });
+
+  const { data: foodItems = [] } = useQuery({
+    queryKey: ["food-items", "all"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("food_items").select("*").order("name");
+      if (error) throw error;
+      return data as FoodItem[];
+    },
   });
 
   const { data: lastScrape } = useQuery({
@@ -142,47 +110,102 @@ const Index = () => {
     },
   });
 
-  const filteredItems = foodItems.filter((item) => {
+  const passesFilters = (item: FoodItem) => {
     if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-
     if (selectedAllergens.length > 0) {
       const itemAllergens = Array.isArray(item.allergens) ? (item.allergens as string[]) : [];
-      const hasAllergen = selectedAllergens.some((a) =>
+      const has = selectedAllergens.some((a) =>
         itemAllergens.some((ia) => typeof ia === "string" && ia.toLowerCase().includes(a.toLowerCase())),
       );
-      if (hasAllergen) return false;
+      if (has) return false;
     }
-
     if (selectedDietary.length > 0) {
       const itemDietary = Array.isArray(item.dietary_flags) ? (item.dietary_flags as string[]) : [];
-      const hasDietary = selectedDietary.every((d) =>
+      const has = selectedDietary.every((d) =>
         itemDietary.some((id) => typeof id === "string" && id.toLowerCase().includes(d.toLowerCase())),
       );
-      if (!hasDietary) return false;
+      if (!has) return false;
     }
-
     return true;
-  });
-
-  const getItemsByStation = (stationId: string) =>
-    filteredItems.filter((item) => item.station_id === stationId);
-
-  const groupItemsByCategory = (items: FoodItem[], stationId: string) => {
-    const stationCategories = categories.filter((c) => c.station_id === stationId);
-    const groups: { id: string; name: string; items: FoodItem[] }[] = [];
-    for (const cat of stationCategories) {
-      const catItems = items.filter((i) => i.category_id === cat.id);
-      if (catItems.length > 0) groups.push({ id: cat.id, name: cat.name, items: catItems });
-    }
-    const uncategorized = items.filter((i) => !i.category_id);
-    if (uncategorized.length > 0) {
-      const label = stationCategories.length > 0 ? "Other" : "All Items";
-      groups.push({ id: "__uncategorized__", name: label, items: uncategorized });
-    }
-    return groups;
   };
 
+  const filteredItems = useMemo(
+    () => foodItems.filter(passesFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [foodItems, searchQuery, selectedAllergens, selectedDietary],
+  );
+
   const filterCount = selectedAllergens.length + selectedDietary.length;
+
+  // Derived data per view
+  const currentHall = "hallId" in view ? halls.find((h) => h.id === view.hallId) : undefined;
+  const currentStation = "stationId" in view ? stations.find((s) => s.id === view.stationId) : undefined;
+  const currentCategory =
+    "categoryId" in view
+      ? view.categoryId === "__uncategorized__"
+        ? { id: "__uncategorized__", name: "All Items", station_id: view.stationId }
+        : categories.find((c) => c.id === view.categoryId)
+      : undefined;
+
+  const stationsForHall = "hallId" in view ? stations.filter((s) => s.dining_hall_id === view.hallId) : [];
+  const itemsForStation =
+    "stationId" in view ? filteredItems.filter((i) => i.station_id === view.stationId) : [];
+
+  const categoriesForStation = useMemo(() => {
+    if (!("stationId" in view)) return [];
+    const stationCats = categories.filter((c) => c.station_id === view.stationId);
+    const result: { id: string; name: string; count: number }[] = [];
+    for (const cat of stationCats) {
+      const count = itemsForStation.filter((i) => i.category_id === cat.id).length;
+      if (count > 0) result.push({ id: cat.id, name: cat.name, count });
+    }
+    const uncat = itemsForStation.filter((i) => !i.category_id).length;
+    if (uncat > 0) {
+      result.push({
+        id: "__uncategorized__",
+        name: stationCats.length > 0 ? "Other" : "All Items",
+        count: uncat,
+      });
+    }
+    return result;
+  }, [view, categories, itemsForStation]);
+
+  const itemsForCategory =
+    "categoryId" in view
+      ? itemsForStation.filter((i) =>
+          view.categoryId === "__uncategorized__" ? !i.category_id : i.category_id === view.categoryId,
+        )
+      : [];
+
+  // Hall item counts (after filters)
+  const hallItemCount = (hallId: string) => {
+    const sIds = stations.filter((s) => s.dining_hall_id === hallId).map((s) => s.id);
+    return filteredItems.filter((i) => sIds.includes(i.station_id)).length;
+  };
+
+  const stationItemCount = (stationId: string) =>
+    filteredItems.filter((i) => i.station_id === stationId).length;
+
+  // Header title + back
+  const headerTitle =
+    view.level === "halls"
+      ? "BSU Dining"
+      : view.level === "stations"
+        ? currentHall?.name || "Stations"
+        : view.level === "categories"
+          ? currentStation?.name || "Categories"
+          : currentCategory?.name || "Items";
+
+  const goBack = () => {
+    setExpandedItem(null);
+    if (view.level === "stations") setView({ level: "halls" });
+    else if (view.level === "categories") setView({ level: "stations", hallId: view.hallId });
+    else if (view.level === "foods")
+      setView({ level: "categories", hallId: view.hallId, stationId: view.stationId });
+  };
+
+  // Color accents for variety (used sparingly per brand guidance)
+  const accentColors = ["bg-primary/10 text-primary", "bg-bsu-blue/10 text-bsu-blue", "bg-success/20 text-foreground", "bg-bsu-yellow/20 text-foreground"];
 
   return (
     <div className="min-h-screen bg-background pb-24">
@@ -190,15 +213,25 @@ const Index = () => {
       <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-border/60 pt-safe">
         <div className="max-w-2xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <Utensils className="h-5 w-5 text-primary" />
-              </div>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {view.level !== "halls" ? (
+                <button
+                  onClick={goBack}
+                  className="h-9 w-9 -ml-1 rounded-full flex items-center justify-center active:bg-muted shrink-0"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="h-5 w-5 text-primary" />
+                </button>
+              ) : (
+                <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
+                  <Utensils className="h-5 w-5 text-primary-foreground" />
+                </div>
+              )}
               <div className="min-w-0">
                 <h1 className="text-base font-bold text-foreground leading-tight truncate">
-                  {activeHallName || "BSU Dining"}
+                  {headerTitle}
                 </h1>
-                {lastScrape && (
+                {lastScrape && view.level === "halls" && (
                   <p className="text-[10px] text-muted-foreground leading-tight">
                     Updated {new Date(lastScrape.scraped_at).toLocaleDateString()}
                   </p>
@@ -207,31 +240,6 @@ const Index = () => {
             </div>
             <ThemeToggle />
           </div>
-
-          {/* Segmented dining hall control */}
-          {halls.length > 0 && (
-            <div className="mt-3 -mx-4 px-4 overflow-x-auto no-scrollbar">
-              <div className="flex gap-1.5 pb-1">
-                {halls.map((hall) => {
-                  const active = hall.id === activeHall;
-                  return (
-                    <button
-                      key={hall.id}
-                      onClick={() => setSelectedHall(hall.id)}
-                      className={cn(
-                        "shrink-0 px-3.5 h-9 rounded-full text-xs font-semibold transition-all whitespace-nowrap active:scale-95",
-                        active
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "bg-secondary text-secondary-foreground",
-                      )}
-                    >
-                      {hall.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Inline search */}
           {searchOpen && (
@@ -256,7 +264,6 @@ const Index = () => {
             </div>
           )}
 
-          {/* Active filter indicator */}
           {filterCount > 0 && (
             <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
@@ -267,100 +274,149 @@ const Index = () => {
       </header>
 
       {/* Main content */}
-      <main className="max-w-2xl mx-auto px-4 py-4">
-        {halls.length === 0 ? (
-          <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
-            <Utensils className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
-            <h2 className="text-lg font-semibold mb-1">No data yet</h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              Tap refresh to load dining hall information.
-            </p>
-            <Button
-              onClick={() => scrapeMutation.mutate()}
-              disabled={scrapeMutation.isPending}
-              className="rounded-full h-11 px-6"
-            >
-              <RefreshCw className={cn("h-4 w-4", scrapeMutation.isPending && "animate-spin")} />
-              {scrapeMutation.isPending ? "Loading..." : "Load data"}
-            </Button>
-          </Card>
-        ) : stations.length === 0 ? (
-          <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
-            <p className="text-sm text-muted-foreground">No stations found.</p>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {stations.map((station) => {
-              const stationItems = getItemsByStation(station.id);
-              const groups = groupItemsByCategory(stationItems, station.id);
-              return (
-                <Collapsible
-                  key={station.id}
-                  defaultOpen
-                  className="rounded-2xl bg-card border border-border/60 shadow-sm overflow-hidden group/station"
-                >
-                  <CollapsibleTrigger className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 active:bg-muted/40 transition-colors">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <h2 className="font-semibold text-base text-foreground truncate">
+      <main className="max-w-2xl mx-auto px-4 py-4 animate-fade-in" key={view.level + ("hallId" in view ? view.hallId : "") + ("stationId" in view ? view.stationId : "") + ("categoryId" in view ? view.categoryId : "")}>
+        {/* HALLS */}
+        {view.level === "halls" && (
+          halls.length === 0 ? (
+            <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+              <Utensils className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
+              <h2 className="text-lg font-semibold mb-1">No data yet</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Tap refresh to load dining hall information.
+              </p>
+              <Button
+                onClick={() => scrapeMutation.mutate()}
+                disabled={scrapeMutation.isPending}
+                className="rounded-full h-11 px-6"
+              >
+                <RefreshCw className={cn("h-4 w-4", scrapeMutation.isPending && "animate-spin")} />
+                {scrapeMutation.isPending ? "Loading..." : "Load data"}
+              </Button>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {halls.map((hall, i) => {
+                const count = hallItemCount(hall.id);
+                const accent = accentColors[i % accentColors.length];
+                return (
+                  <button
+                    key={hall.id}
+                    onClick={() => setView({ level: "stations", hallId: hall.id })}
+                    className="group text-left rounded-2xl bg-card border border-border/60 shadow-sm p-4 min-h-[140px] flex flex-col justify-between active:scale-[0.97] transition-transform"
+                  >
+                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", accent)}>
+                      <Building2 className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-sm text-foreground leading-tight line-clamp-2">
+                        {hall.name}
+                      </h2>
+                      <p className="text-[11px] text-muted-foreground mt-1">{count} items</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* STATIONS */}
+        {view.level === "stations" && (
+          stationsForHall.length === 0 ? (
+            <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+              <p className="text-sm text-muted-foreground">No stations found.</p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {stationsForHall.map((station, i) => {
+                const count = stationItemCount(station.id);
+                const accent = accentColors[i % accentColors.length];
+                return (
+                  <button
+                    key={station.id}
+                    onClick={() => setView({ level: "categories", hallId: view.hallId, stationId: station.id })}
+                    className="text-left rounded-2xl bg-card border border-border/60 shadow-sm p-4 min-h-[120px] flex flex-col justify-between active:scale-[0.97] transition-transform"
+                  >
+                    <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", accent)}>
+                      <Store className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-sm text-foreground leading-tight line-clamp-2">
                         {station.name}
                       </h2>
-                      <Badge variant="secondary" className="rounded-full text-[10px] px-2 py-0 h-5 shrink-0">
-                        {stationItems.length}
-                      </Badge>
+                      <p className="text-[11px] text-muted-foreground mt-1">{count} items</p>
                     </div>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 transition-transform group-data-[state=closed]/station:-rotate-90" />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
-                    <div className="px-3 pb-3 pt-1">
-                      {stationItems.length === 0 ? (
-                        <p className="py-4 text-center text-sm text-muted-foreground">
-                          No items match your filters
-                        </p>
-                      ) : (
-                        <div className="space-y-3">
-                          {groups.map((group) => (
-                            <Collapsible
-                              key={group.id}
-                              defaultOpen
-                              className="group/cat"
-                            >
-                              <CollapsibleTrigger className="w-full flex items-center gap-2 mb-2 px-1 min-h-[32px]">
-                                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=closed]/cat:-rotate-90" />
-                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
-                                  {group.name}
-                                </h3>
-                                <span className="text-[11px] text-muted-foreground/70">
-                                  {group.items.length}
-                                </span>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
-                                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2">
-                                  {group.items.map((item) => (
-                                    <FoodCard
-                                      key={item.id}
-                                      name={item.name}
-                                      servingSize={item.serving_size}
-                                      allergens={item.allergens}
-                                      dietaryFlags={item.dietary_flags}
-                                      nutrients={item.nutrients}
-                                      expanded={expandedItem === item.id}
-                                      onToggle={() =>
-                                        setExpandedItem(expandedItem === item.id ? null : item.id)
-                                      }
-                                    />
-                                  ))}
-                                </div>
-                              </CollapsibleContent>
-                            </Collapsible>
-                          ))}
-                        </div>
-                      )}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* CATEGORIES */}
+        {view.level === "categories" && (
+          categoriesForStation.length === 0 ? (
+            <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+              <p className="text-sm text-muted-foreground">No items match your filters.</p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {categoriesForStation.map((cat, i) => {
+                const accent = accentColors[i % accentColors.length];
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() =>
+                      setView({
+                        level: "foods",
+                        hallId: (view as any).hallId,
+                        stationId: view.stationId,
+                        categoryId: cat.id,
+                      })
+                    }
+                    className="text-left rounded-2xl bg-card border border-border/60 shadow-sm p-4 min-h-[110px] flex flex-col justify-between active:scale-[0.97] transition-transform"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", accent)}>
+                        <FolderOpen className="h-4.5 w-4.5" />
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              );
-            })}
-          </div>
+                    <div>
+                      <h2 className="font-semibold text-sm text-foreground leading-tight line-clamp-2">
+                        {cat.name}
+                      </h2>
+                      <p className="text-[11px] text-muted-foreground mt-1">{cat.count} items</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* FOODS */}
+        {view.level === "foods" && (
+          itemsForCategory.length === 0 ? (
+            <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+              <p className="text-sm text-muted-foreground">No items match your filters.</p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 items-start">
+              {itemsForCategory.map((item) => (
+                <FoodCard
+                  key={item.id}
+                  name={item.name}
+                  servingSize={item.serving_size}
+                  allergens={item.allergens}
+                  dietaryFlags={item.dietary_flags}
+                  nutrients={item.nutrients}
+                  expanded={expandedItem === item.id}
+                  onToggle={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
+                />
+              ))}
+            </div>
+          )
         )}
       </main>
 
