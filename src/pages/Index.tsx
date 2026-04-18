@@ -11,6 +11,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import FoodCard from "@/components/FoodCard";
 import FilterSheet from "@/components/FilterSheet";
 import { cn } from "@/lib/utils";
+import { useSwipeBack } from "@/hooks/use-swipe-back";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -203,6 +204,9 @@ const Index = () => {
     else if (view.level === "foods")
       setView({ level: "categories", hallId: view.hallId, stationId: view.stationId });
   };
+
+  // iOS-style swipe-back from left edge
+  useSwipeBack({ enabled: view.level !== "halls", onBack: goBack });
 
   // Color accents for variety (used sparingly per brand guidance)
   const accentColors = ["bg-primary/10 text-primary", "bg-bsu-blue/10 text-bsu-blue", "bg-success/20 text-foreground", "bg-bsu-yellow/20 text-foreground"];

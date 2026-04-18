@@ -197,6 +197,30 @@ function parseStations(html: string): { name: string; unitOid: number }[] {
   return stations;
 }
 
+/** Parse menu links (Daily Menu style) from a panel. */
+function parseMenus(html: string): { name: string; menuOid: number }[] {
+  const menus: { name: string; menuOid: number }[] = [];
+  const seen = new Set<number>();
+  // Common NetNutrition triggers for menu selection
+  const regexes = [
+    /selectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+    /menuListSelectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+    /SelectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const menuOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(menuOid)) {
+        seen.add(menuOid);
+        menus.push({ menuOid, name });
+      }
+    }
+  }
+  return menus;
+}
+
 interface ParsedFoodItem {
   name: string;
   detailOid: number;
@@ -416,13 +440,37 @@ async function upsertCategory(
   return (data?.id as string | undefined) ?? null;
 }
 
+/** Fetch and parse nutrition facts for a single item. Returns {} on failure. */
+async function fetchItemNutrients(
+  session: SessionState,
+  detailOid: number,
+): Promise<Record<string, string>> {
+  try {
+    const response = await postWithSession(
+      session,
+      "/NutritionDetail/ShowItemNutritionLabel",
+      { detailOid },
+    );
+    if (isStartupError(response)) return {};
+    const labelHtml = extractPanelHtml(response, "itemNutritionLabelPanel") ||
+      response;
+    return parseNutrients(labelHtml);
+  } catch (e) {
+    console.error(`    Nutrition fetch failed for ${detailOid}:`, e);
+    return {};
+  }
+}
+
 /** Upsert a food item into the database. */
 async function upsertItem(
   supabase: SupabaseAny,
+  session: SessionState,
   stationId: string,
   categoryId: string | null,
   item: ParsedFoodItem,
 ): Promise<void> {
+  const nutrients = await fetchItemNutrients(session, item.detailOid);
+
   const { error: itemError } = await supabase.from("food_items").upsert(
     {
       station_id: stationId,
@@ -432,6 +480,7 @@ async function upsertItem(
       serving_size: item.servingSize || null,
       allergens: item.allergens,
       dietary_flags: item.dietaryFlags,
+      nutrients,
     },
     { onConflict: "detail_oid" },
   );
@@ -444,6 +493,7 @@ async function upsertItem(
 /** Process items from an itemPanel, using cbo_nn_itemGroupRow as category key when present. */
 async function processItemPanel(
   supabase: SupabaseAny,
+  session: SessionState,
   stationId: string,
   itemPanelHtml: string,
 ): Promise<number> {
@@ -476,7 +526,7 @@ async function processItemPanel(
       );
 
       for (const item of category.items) {
-        await upsertItem(supabase, stationId, categoryId, item);
+        await upsertItem(supabase, session, stationId, categoryId, item);
         total++;
       }
     }
@@ -488,11 +538,60 @@ async function processItemPanel(
   console.log(`    Found ${foodItems.length} ungrouped food items`);
 
   for (const item of foodItems) {
-    await upsertItem(supabase, stationId, null, item);
+    await upsertItem(supabase, session, stationId, null, item);
   }
 
   return foodItems.length;
 }
+
+/** Try to fetch items from a "Daily Menu"-style station that lists menus rather than items. */
+async function processDailyMenuStation(
+  supabase: SupabaseAny,
+  session: SessionState,
+  stationId: string,
+  childResponseHtml: string,
+): Promise<number> {
+  // Look for menu links in any panel of the response
+  const candidates = [
+    extractPanelHtml(childResponseHtml, "itemPanel"),
+    extractPanelHtml(childResponseHtml, "selectedUnitPanel"),
+    extractPanelHtml(childResponseHtml, "menuListPanel"),
+    childResponseHtml,
+  ];
+  let menus: { name: string; menuOid: number }[] = [];
+  for (const html of candidates) {
+    if (!html) continue;
+    menus = parseMenus(html);
+    if (menus.length > 0) break;
+  }
+
+  if (menus.length === 0) {
+    console.log(`    No daily menus found for station`);
+    return 0;
+  }
+
+  console.log(`    Found ${menus.length} daily menus, drilling in...`);
+  let total = 0;
+  for (const menu of menus) {
+    console.log(`      Menu: ${menu.name} (${menu.menuOid})`);
+    const menuRes = await postWithRetry(session, "/Menu/SelectMenu", {
+      menuOid: menu.menuOid,
+    });
+    if (isStartupError(menuRes)) continue;
+
+    const menuItemHtml = extractPanelHtml(menuRes, "itemPanel");
+    if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
+      total += await processItemPanel(
+        supabase,
+        session,
+        stationId,
+        menuItemHtml,
+      );
+    }
+  }
+  return total;
+}
+
 
 /** POST with session recovery — re-inits session if Start-up Error is returned. */
 async function postWithRetry(
@@ -642,6 +741,7 @@ Deno.serve(async (req) => {
         if (!stationError && stationData) {
           totalItems += await processItemPanel(
             supabase,
+            session,
             stationData.id,
             itemPanelHtml,
           );
@@ -692,6 +792,7 @@ Deno.serve(async (req) => {
             if (!stationError && stationData) {
               totalItems += await processItemPanel(
                 supabase,
+                session,
                 stationData.id,
                 fallbackItemHtml,
               );
@@ -733,6 +834,7 @@ Deno.serve(async (req) => {
               if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
                 totalItems += await processItemPanel(
                   supabase,
+                  session,
                   stationData.id,
                   nestedItemHtml,
                 );
@@ -786,6 +888,7 @@ Deno.serve(async (req) => {
         if (stationItemHtml && stationItemHtml.includes("cbo_nn_itemHover")) {
           totalItems += await processItemPanel(
             supabase,
+            session,
             stationData.id,
             stationItemHtml,
           );
@@ -818,11 +921,30 @@ Deno.serve(async (req) => {
             if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
               totalItems += await processItemPanel(
                 supabase,
+                session,
                 stationData.id,
                 nestedItemHtml,
               );
             }
           }
+          continue;
+        }
+
+        // Daily Menu fallback: station response had no items and no child units —
+        // it likely lists dated menus that need to be selected to reveal items.
+        console.log(
+          `    Station ${station.name} has no items/children — trying daily menu drill-in`,
+        );
+        const dailyCount = await processDailyMenuStation(
+          supabase,
+          session,
+          stationData.id,
+          childResponse,
+        );
+        if (dailyCount > 0) {
+          totalItems += dailyCount;
+        } else {
+          console.log(`    No daily menu items recovered for ${station.name}`);
         }
       }
     }
