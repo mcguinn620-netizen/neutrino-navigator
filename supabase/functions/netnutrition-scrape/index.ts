@@ -576,20 +576,27 @@ async function processDailyMenuStation(
     );
   }
 
-  // Look for menu links in any panel of the response
+  // NetNutrition's actual panel for daily menus is `menuPanel`, which contains
+  // <a class='cbo_nn_menuLink' onclick="menuListSelectMenu(NNN)">Lunch</a>
+  // grouped by date row.
   const candidates = [
+    extractPanelHtml(childResponseHtml, "menuPanel"),
+    extractPanelHtml(childResponseHtml, "MenuList"),
+    extractPanelHtml(childResponseHtml, "menuListPanel"),
     extractPanelHtml(childResponseHtml, "itemPanel"),
     extractPanelHtml(childResponseHtml, "selectedUnitPanel"),
-    extractPanelHtml(childResponseHtml, "menuListPanel"),
-    extractPanelHtml(childResponseHtml, "MenuList"),
-    extractPanelHtml(childResponseHtml, "menuPanel"),
     childResponseHtml,
   ];
-  let menus: { name: string; menuOid: number }[] = [];
+  let menus: { name: string; menuOid: number; dateLabel?: string }[] = [];
+  let panelHtml = "";
   for (const html of candidates) {
     if (!html) continue;
-    menus = parseMenus(html);
-    if (menus.length > 0) break;
+    const found = parseMenusWithDates(html);
+    if (found.length > 0) {
+      menus = found;
+      panelHtml = html;
+      break;
+    }
   }
 
   if (menus.length === 0) {
@@ -597,10 +604,15 @@ async function processDailyMenuStation(
     return 0;
   }
 
-  console.log(`    Found ${menus.length} daily menus, drilling in...`);
+  console.log(
+    `    Found ${menus.length} daily menus in panel (${panelHtml.length} chars), drilling in...`,
+  );
   let total = 0;
   for (const menu of menus) {
-    console.log(`      Menu: ${menu.name} (${menu.menuOid})`);
+    const menuLabel = menu.dateLabel
+      ? `${menu.dateLabel} — ${menu.name}`
+      : menu.name;
+    console.log(`      Menu: ${menuLabel} (${menu.menuOid})`);
     const menuRes = await postWithRetry(session, "/Menu/SelectMenu", {
       menuOid: menu.menuOid,
     });
@@ -608,15 +620,104 @@ async function processDailyMenuStation(
 
     const menuItemHtml = extractPanelHtml(menuRes, "itemPanel");
     if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
-      total += await processItemPanel(
+      total += await processItemPanelWithCategoryPrefix(
         supabase,
         session,
         stationId,
         menuItemHtml,
+        menuLabel,
+      );
+    } else {
+      console.log(
+        `        SelectMenu(${menu.menuOid}) returned no items (panel length ${menuItemHtml?.length ?? 0})`,
       );
     }
   }
   return total;
+}
+
+/** Parse menu links along with their date row label so we can prefix categories. */
+function parseMenusWithDates(
+  html: string,
+): { name: string; menuOid: number; dateLabel?: string }[] {
+  const out: { name: string; menuOid: number; dateLabel?: string }[] = [];
+  const seen = new Set<number>();
+
+  const rowRegex =
+    /<tr[^>]*class=['"]cbo_nn_menu(?:Primary|Alternate)Row['"][^>]*>([\s\S]*?)<\/tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRegex.exec(html)) !== null) {
+    const row = rowMatch[1];
+    const dateMatch = row.match(
+      /<td[^>]*>\s*((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})\s*<\/td>/i,
+    );
+    const dateLabel = dateMatch
+      ? dateMatch[1].replace(/\s+/g, " ").trim()
+      : undefined;
+
+    const linkRegex =
+      /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
+    let linkMatch;
+    while ((linkMatch = linkRegex.exec(row)) !== null) {
+      const menuOid = parseInt(linkMatch[1]);
+      const name = linkMatch[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(menuOid)) {
+        seen.add(menuOid);
+        out.push({ menuOid, name, dateLabel });
+      }
+    }
+  }
+
+  if (out.length === 0) {
+    const generic =
+      /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
+    let m;
+    while ((m = generic.exec(html)) !== null) {
+      const oid = parseInt(m[1]);
+      const name = m[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(oid)) {
+        seen.add(oid);
+        out.push({ menuOid: oid, name });
+      }
+    }
+  }
+
+  return out;
+}
+
+/** Like processItemPanel but prefixes each discovered category name with a label. */
+async function processItemPanelWithCategoryPrefix(
+  supabase: SupabaseAny,
+  session: SessionState,
+  stationId: string,
+  itemPanelHtml: string,
+  prefix: string,
+): Promise<number> {
+  const categories = parseCategoriesFromItemPanel(itemPanelHtml);
+
+  if (categories.length > 0) {
+    let total = 0;
+    for (const category of categories) {
+      const labeledName = `${prefix} • ${category.name}`;
+      console.log(
+        `      Category: ${labeledName} (${category.items.length} items)`,
+      );
+      const categoryId = await upsertCategory(supabase, stationId, labeledName);
+      for (const item of category.items) {
+        await upsertItem(supabase, session, stationId, categoryId, item);
+        total++;
+      }
+    }
+    return total;
+  }
+
+  const items = parseFoodItems(itemPanelHtml);
+  if (items.length === 0) return 0;
+  const categoryId = await upsertCategory(supabase, stationId, prefix);
+  for (const item of items) {
+    await upsertItem(supabase, session, stationId, categoryId, item);
+  }
+  return items.length;
 }
 
 
