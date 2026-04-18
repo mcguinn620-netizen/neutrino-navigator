@@ -551,11 +551,38 @@ async function processDailyMenuStation(
   stationId: string,
   childResponseHtml: string,
 ): Promise<number> {
+  // Diagnostic: dump panel ids + samples so we can see exactly what NetNutrition returns.
+  try {
+    const data = JSON.parse(childResponseHtml);
+    if (Array.isArray(data.panels)) {
+      console.log(
+        `    [daily-menu probe] panels: ${data.panels.map((p: { id: string; html?: string }) => `${p.id}(${p.html?.length ?? 0})`).join(", ")}`,
+      );
+      for (const p of data.panels) {
+        if (p.html && p.html.length > 100) {
+          console.log(
+            `    [daily-menu probe] panel ${p.id} sample: ${p.html.substring(0, 1500).replace(/\s+/g, " ")}`,
+          );
+        }
+      }
+    } else {
+      console.log(
+        `    [daily-menu probe] non-panels JSON keys: ${Object.keys(data).join(",")}`,
+      );
+    }
+  } catch {
+    console.log(
+      `    [daily-menu probe] non-JSON response, first 1500 chars: ${childResponseHtml.substring(0, 1500).replace(/\s+/g, " ")}`,
+    );
+  }
+
   // Look for menu links in any panel of the response
   const candidates = [
     extractPanelHtml(childResponseHtml, "itemPanel"),
     extractPanelHtml(childResponseHtml, "selectedUnitPanel"),
     extractPanelHtml(childResponseHtml, "menuListPanel"),
+    extractPanelHtml(childResponseHtml, "MenuList"),
+    extractPanelHtml(childResponseHtml, "menuPanel"),
     childResponseHtml,
   ];
   let menus: { name: string; menuOid: number }[] = [];
