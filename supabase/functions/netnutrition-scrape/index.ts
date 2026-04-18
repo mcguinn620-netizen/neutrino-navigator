@@ -197,6 +197,30 @@ function parseStations(html: string): { name: string; unitOid: number }[] {
   return stations;
 }
 
+/** Parse menu links (Daily Menu style) from a panel. */
+function parseMenus(html: string): { name: string; menuOid: number }[] {
+  const menus: { name: string; menuOid: number }[] = [];
+  const seen = new Set<number>();
+  // Common NetNutrition triggers for menu selection
+  const regexes = [
+    /selectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+    /menuListSelectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+    /SelectMenu\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const menuOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(menuOid)) {
+        seen.add(menuOid);
+        menus.push({ menuOid, name });
+      }
+    }
+  }
+  return menus;
+}
+
 interface ParsedFoodItem {
   name: string;
   detailOid: number;
