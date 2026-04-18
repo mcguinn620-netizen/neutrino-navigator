@@ -741,6 +741,74 @@ async function processItemPanelWithCategoryPrefix(
   return items.length;
 }
 
+/** Process a hall that exposes a top-level menuPanel (dated meals).
+ * Strategy: create one station per unique meal name (e.g. "Lunch", "Dinner",
+ * or "Daily Menu" if there's only one), and inside each station store
+ * categories prefixed by the date so users can browse per-day. */
+async function processHallMenuList(
+  supabase: SupabaseAny,
+  session: SessionState,
+  hallId: string,
+  hallUnitOid: number,
+  menus: { name: string; menuOid: number; dateLabel?: string }[],
+): Promise<number> {
+  const byMeal = new Map<string, typeof menus>();
+  for (const m of menus) {
+    const key = m.name || "Daily Menu";
+    if (!byMeal.has(key)) byMeal.set(key, []);
+    byMeal.get(key)!.push(m);
+  }
+
+  let total = 0;
+  let mealIndex = 0;
+  for (const [mealName, mealMenus] of byMeal) {
+    mealIndex++;
+    const syntheticOid = hallUnitOid * 1000 + mealIndex;
+
+    const { data: stationData, error: stationError } = await supabase
+      .from("stations")
+      .upsert(
+        { dining_hall_id: hallId, name: mealName, unit_oid: syntheticOid },
+        { onConflict: "unit_oid" },
+      )
+      .select("id")
+      .single();
+
+    if (stationError || !stationData) {
+      console.error(`  Error creating meal station ${mealName}:`, stationError);
+      continue;
+    }
+
+    console.log(
+      `  Meal station "${mealName}" (${mealMenus.length} dates)`,
+    );
+
+    for (const menu of mealMenus) {
+      const dateLabel = menu.dateLabel || "Today";
+      console.log(`    ${dateLabel} (menuOid ${menu.menuOid})`);
+
+      const menuRes = await postWithRetry(session, "/Menu/SelectMenu", {
+        menuOid: menu.menuOid,
+      });
+      if (isStartupError(menuRes)) continue;
+
+      const itemHtml = extractPanelHtml(menuRes, "itemPanel");
+      if (!itemHtml || !itemHtml.includes("cbo_nn_itemHover")) {
+        console.log(`      no items returned (panel ${itemHtml?.length ?? 0})`);
+        continue;
+      }
+
+      total += await processItemPanelWithCategoryPrefix(
+        supabase,
+        session,
+        stationData.id,
+        itemHtml,
+        dateLabel,
+      );
+    }
+  }
+  return total;
+}
 
 /** POST with session recovery — re-inits session if Start-up Error is returned. */
 async function postWithRetry(
