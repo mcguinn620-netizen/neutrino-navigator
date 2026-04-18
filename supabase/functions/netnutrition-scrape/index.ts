@@ -440,13 +440,37 @@ async function upsertCategory(
   return (data?.id as string | undefined) ?? null;
 }
 
+/** Fetch and parse nutrition facts for a single item. Returns {} on failure. */
+async function fetchItemNutrients(
+  session: SessionState,
+  detailOid: number,
+): Promise<Record<string, string>> {
+  try {
+    const response = await postWithSession(
+      session,
+      "/NutritionDetail/ShowItemNutritionLabel",
+      { detailOid },
+    );
+    if (isStartupError(response)) return {};
+    const labelHtml = extractPanelHtml(response, "itemNutritionLabelPanel") ||
+      response;
+    return parseNutrients(labelHtml);
+  } catch (e) {
+    console.error(`    Nutrition fetch failed for ${detailOid}:`, e);
+    return {};
+  }
+}
+
 /** Upsert a food item into the database. */
 async function upsertItem(
   supabase: SupabaseAny,
+  session: SessionState,
   stationId: string,
   categoryId: string | null,
   item: ParsedFoodItem,
 ): Promise<void> {
+  const nutrients = await fetchItemNutrients(session, item.detailOid);
+
   const { error: itemError } = await supabase.from("food_items").upsert(
     {
       station_id: stationId,
@@ -456,6 +480,7 @@ async function upsertItem(
       serving_size: item.servingSize || null,
       allergens: item.allergens,
       dietary_flags: item.dietaryFlags,
+      nutrients,
     },
     { onConflict: "detail_oid" },
   );
