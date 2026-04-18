@@ -1,19 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCw, Search, Utensils, Leaf, AlertTriangle, ChevronDown } from "lucide-react";
+import { RefreshCw, Search, Utensils, ChevronDown, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import NutritionPanel from "@/components/NutritionPanel";
-import AllergenFilterBar from "@/components/AllergenFilterBar";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import FoodCard from "@/components/FoodCard";
+import FilterSheet from "@/components/FilterSheet";
+import { cn } from "@/lib/utils";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
@@ -50,13 +48,13 @@ interface MenuCategory {
 const Index = () => {
   const [selectedHall, setSelectedHall] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedAllergens, setSelectedAllergens] = useState<string[]>([]);
   const [selectedDietary, setSelectedDietary] = useState<string[]>([]);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch dining halls
   const { data: halls = [] } = useQuery({
     queryKey: ["dining-halls"],
     queryFn: async () => {
@@ -66,10 +64,9 @@ const Index = () => {
     },
   });
 
-  // Auto-select first hall
   const activeHall = selectedHall || halls[0]?.id;
+  const activeHallName = halls.find((h) => h.id === activeHall)?.name;
 
-  // Fetch stations for selected hall
   const { data: stations = [] } = useQuery({
     queryKey: ["stations", activeHall],
     queryFn: async () => {
@@ -85,9 +82,8 @@ const Index = () => {
     enabled: !!activeHall,
   });
 
-  // Fetch food items for all stations of selected hall
   const stationIds = stations.map((s) => s.id);
-  const { data: foodItems = [], isLoading: itemsLoading } = useQuery({
+  const { data: foodItems = [] } = useQuery({
     queryKey: ["food-items", stationIds],
     queryFn: async () => {
       if (stationIds.length === 0) return [];
@@ -102,7 +98,6 @@ const Index = () => {
     enabled: stationIds.length > 0,
   });
 
-  // Fetch menu categories for all stations of selected hall
   const { data: categories = [] } = useQuery({
     queryKey: ["menu-categories", stationIds],
     queryFn: async () => {
@@ -118,7 +113,6 @@ const Index = () => {
     enabled: stationIds.length > 0,
   });
 
-  // Fetch last scrape log
   const { data: lastScrape } = useQuery({
     queryKey: ["last-scrape"],
     queryFn: async () => {
@@ -133,49 +127,36 @@ const Index = () => {
     },
   });
 
-  // Scrape mutation
   const scrapeMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("netnutrition-scrape", {
-        body: {},
-      });
+      const { data, error } = await supabase.functions.invoke("netnutrition-scrape", { body: {} });
       if (error) throw error;
       return data;
     },
     onSuccess: (data) => {
-      toast({ title: "Scrape complete", description: data.message });
+      toast({ title: "Updated", description: data.message });
       queryClient.invalidateQueries();
     },
     onError: (error) => {
-      toast({
-        title: "Scrape failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Refresh failed", description: error.message, variant: "destructive" });
     },
   });
 
-  // Filter food items
   const filteredItems = foodItems.filter((item) => {
-    // Search filter
-    if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
+    if (searchQuery && !item.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
 
-    // Allergen filter (exclude items with selected allergens)
     if (selectedAllergens.length > 0) {
-      const itemAllergens = Array.isArray(item.allergens) ? item.allergens as string[] : [];
+      const itemAllergens = Array.isArray(item.allergens) ? (item.allergens as string[]) : [];
       const hasAllergen = selectedAllergens.some((a) =>
-        itemAllergens.some((ia) => typeof ia === 'string' && ia.toLowerCase().includes(a.toLowerCase()))
+        itemAllergens.some((ia) => typeof ia === "string" && ia.toLowerCase().includes(a.toLowerCase())),
       );
       if (hasAllergen) return false;
     }
 
-    // Dietary filter (include only items with selected dietary flags)
     if (selectedDietary.length > 0) {
-      const itemDietary = Array.isArray(item.dietary_flags) ? item.dietary_flags as string[] : [];
+      const itemDietary = Array.isArray(item.dietary_flags) ? (item.dietary_flags as string[]) : [];
       const hasDietary = selectedDietary.every((d) =>
-        itemDietary.some((id) => typeof id === 'string' && id.toLowerCase().includes(d.toLowerCase()))
+        itemDietary.some((id) => typeof id === "string" && id.toLowerCase().includes(d.toLowerCase())),
       );
       if (!hasDietary) return false;
     }
@@ -186,225 +167,238 @@ const Index = () => {
   const getItemsByStation = (stationId: string) =>
     filteredItems.filter((item) => item.station_id === stationId);
 
-  // Group station items by category. Items without a category go into "Other".
   const groupItemsByCategory = (items: FoodItem[], stationId: string) => {
     const stationCategories = categories.filter((c) => c.station_id === stationId);
     const groups: { id: string; name: string; items: FoodItem[] }[] = [];
-
     for (const cat of stationCategories) {
       const catItems = items.filter((i) => i.category_id === cat.id);
-      if (catItems.length > 0) {
-        groups.push({ id: cat.id, name: cat.name, items: catItems });
-      }
+      if (catItems.length > 0) groups.push({ id: cat.id, name: cat.name, items: catItems });
     }
-
     const uncategorized = items.filter((i) => !i.category_id);
     if (uncategorized.length > 0) {
       const label = stationCategories.length > 0 ? "Other" : "All Items";
       groups.push({ id: "__uncategorized__", name: label, items: uncategorized });
     }
-
     return groups;
   };
 
+  const filterCount = selectedAllergens.length + selectedDietary.length;
+
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Utensils className="h-8 w-8 text-primary" />
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">BSU Dining</h1>
-                <p className="text-sm text-muted-foreground">Ball State University Nutrition Dashboard</p>
+    <div className="min-h-screen bg-background pb-24">
+      {/* Sticky top header */}
+      <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-border/60 pt-safe">
+        <div className="max-w-2xl mx-auto px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Utensils className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-base font-bold text-foreground leading-tight truncate">
+                  {activeHallName || "BSU Dining"}
+                </h1>
+                {lastScrape && (
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    Updated {new Date(lastScrape.scraped_at).toLocaleDateString()}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              {lastScrape && (
-                <span className="text-xs text-muted-foreground">
-                  Updated: {new Date(lastScrape.scraped_at).toLocaleDateString()}
-                </span>
-              )}
-              <ThemeToggle />
-              <Button
-                onClick={() => scrapeMutation.mutate()}
-                disabled={scrapeMutation.isPending}
-                size="sm"
-                variant="outline"
-              >
-                <RefreshCw className={`h-4 w-4 ${scrapeMutation.isPending ? "animate-spin" : ""}`} />
-                {scrapeMutation.isPending ? "Scraping..." : "Refresh Data"}
-              </Button>
-            </div>
+            <ThemeToggle />
           </div>
+
+          {/* Segmented dining hall control */}
+          {halls.length > 0 && (
+            <div className="mt-3 -mx-4 px-4 overflow-x-auto no-scrollbar">
+              <div className="flex gap-1.5 pb-1">
+                {halls.map((hall) => {
+                  const active = hall.id === activeHall;
+                  return (
+                    <button
+                      key={hall.id}
+                      onClick={() => setSelectedHall(hall.id)}
+                      className={cn(
+                        "shrink-0 px-3.5 h-9 rounded-full text-xs font-semibold transition-all whitespace-nowrap active:scale-95",
+                        active
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-secondary text-secondary-foreground",
+                      )}
+                    >
+                      {hall.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Inline search */}
+          {searchOpen && (
+            <div className="mt-2 relative animate-fade-in">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                autoFocus
+                placeholder="Search food items..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9 h-10 rounded-xl bg-secondary border-0"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-muted-foreground/20 flex items-center justify-center"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Active filter indicator */}
+          {filterCount > 0 && (
+            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              {filterCount} filter{filterCount > 1 ? "s" : ""} active
+            </div>
+          )}
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-6">
-        {/* Search and Filters */}
-        <div className="mb-6 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search food items..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+      {/* Main content */}
+      <main className="max-w-2xl mx-auto px-4 py-4">
+        {halls.length === 0 ? (
+          <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+            <Utensils className="mx-auto h-12 w-12 text-muted-foreground mb-3" />
+            <h2 className="text-lg font-semibold mb-1">No data yet</h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Tap refresh to load dining hall information.
+            </p>
+            <Button
+              onClick={() => scrapeMutation.mutate()}
+              disabled={scrapeMutation.isPending}
+              className="rounded-full h-11 px-6"
+            >
+              <RefreshCw className={cn("h-4 w-4", scrapeMutation.isPending && "animate-spin")} />
+              {scrapeMutation.isPending ? "Loading..." : "Load data"}
+            </Button>
+          </Card>
+        ) : stations.length === 0 ? (
+          <Card className="p-8 text-center mt-8 rounded-3xl border-0 bg-card shadow-sm">
+            <p className="text-sm text-muted-foreground">No stations found.</p>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {stations.map((station) => {
+              const stationItems = getItemsByStation(station.id);
+              const groups = groupItemsByCategory(stationItems, station.id);
+              return (
+                <Collapsible
+                  key={station.id}
+                  defaultOpen
+                  className="rounded-2xl bg-card border border-border/60 shadow-sm overflow-hidden group/station"
+                >
+                  <CollapsibleTrigger className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 active:bg-muted/40 transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h2 className="font-semibold text-base text-foreground truncate">
+                        {station.name}
+                      </h2>
+                      <Badge variant="secondary" className="rounded-full text-[10px] px-2 py-0 h-5 shrink-0">
+                        {stationItems.length}
+                      </Badge>
+                    </div>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 transition-transform group-data-[state=closed]/station:-rotate-90" />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                    <div className="px-3 pb-3 pt-1">
+                      {stationItems.length === 0 ? (
+                        <p className="py-4 text-center text-sm text-muted-foreground">
+                          No items match your filters
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {groups.map((group) => (
+                            <Collapsible
+                              key={group.id}
+                              defaultOpen
+                              className="group/cat"
+                            >
+                              <CollapsibleTrigger className="w-full flex items-center gap-2 mb-2 px-1 min-h-[32px]">
+                                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform group-data-[state=closed]/cat:-rotate-90" />
+                                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+                                  {group.name}
+                                </h3>
+                                <span className="text-[11px] text-muted-foreground/70">
+                                  {group.items.length}
+                                </span>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+                                <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2">
+                                  {group.items.map((item) => (
+                                    <FoodCard
+                                      key={item.id}
+                                      name={item.name}
+                                      servingSize={item.serving_size}
+                                      allergens={item.allergens}
+                                      dietaryFlags={item.dietary_flags}
+                                      nutrients={item.nutrients}
+                                      expanded={expandedItem === item.id}
+                                      onToggle={() =>
+                                        setExpandedItem(expandedItem === item.id ? null : item.id)
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </div>
+        )}
+      </main>
 
-          <AllergenFilterBar
+      {/* Bottom action bar */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60 pb-safe">
+        <div className="max-w-2xl mx-auto px-3 py-1.5 flex items-center justify-around">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSearchOpen((v) => !v)}
+            className={cn(
+              "flex flex-col h-auto py-1.5 px-3 min-w-[44px] gap-0.5",
+              searchOpen && "text-primary",
+            )}
+          >
+            <Search className="h-5 w-5" />
+            <span className="text-[10px]">Search</span>
+          </Button>
+
+          <FilterSheet
             selectedAllergens={selectedAllergens}
             selectedDietary={selectedDietary}
             onAllergenChange={setSelectedAllergens}
             onDietaryChange={setSelectedDietary}
           />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => scrapeMutation.mutate()}
+            disabled={scrapeMutation.isPending}
+            className="flex flex-col h-auto py-1.5 px-3 min-w-[44px] gap-0.5"
+          >
+            <RefreshCw className={cn("h-5 w-5", scrapeMutation.isPending && "animate-spin")} />
+            <span className="text-[10px]">Refresh</span>
+          </Button>
         </div>
-
-        {/* No data state */}
-        {halls.length === 0 ? (
-          <Card className="p-12 text-center">
-            <Utensils className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h2 className="text-xl font-semibold mb-2">No Data Yet</h2>
-            <p className="text-muted-foreground mb-4">
-              Click "Refresh Data" to scrape dining hall information from NetNutrition.
-            </p>
-            <Button onClick={() => scrapeMutation.mutate()} disabled={scrapeMutation.isPending}>
-              <RefreshCw className={`h-4 w-4 ${scrapeMutation.isPending ? "animate-spin" : ""}`} />
-              {scrapeMutation.isPending ? "Scraping..." : "Load Dining Data"}
-            </Button>
-          </Card>
-        ) : (
-          /* Dining Hall Tabs */
-          <Tabs value={activeHall || ""} onValueChange={setSelectedHall}>
-            <TabsList className="mb-4 flex-wrap h-auto gap-1">
-              {halls.map((hall) => (
-                <TabsTrigger key={hall.id} value={hall.id} className="text-xs">
-                  {hall.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            {halls.map((hall) => (
-              <TabsContent key={hall.id} value={hall.id}>
-                {stations.length === 0 ? (
-                  <Card className="p-8 text-center">
-                    <p className="text-muted-foreground">No stations found for {hall.name}</p>
-                  </Card>
-                ) : (
-                  <Accordion type="multiple" className="space-y-2">
-                    {stations.map((station) => {
-                      const stationItems = getItemsByStation(station.id);
-                      return (
-                        <AccordionItem key={station.id} value={station.id} className="border rounded-lg px-4">
-                          <AccordionTrigger className="hover:no-underline">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">{station.name}</span>
-                              <Badge variant="secondary" className="text-xs">
-                                {stationItems.length} items
-                              </Badge>
-                            </div>
-                          </AccordionTrigger>
-                          <AccordionContent>
-                            {stationItems.length === 0 ? (
-                              <p className="py-4 text-sm text-muted-foreground">
-                                No items match your filters
-                              </p>
-                            ) : (
-                              <div className="space-y-4">
-                                {groupItemsByCategory(stationItems, station.id).map((group) => (
-                                  <Collapsible key={group.id} defaultOpen className="group/cat">
-                                    <CollapsibleTrigger className="w-full flex items-center gap-2 mb-2 pb-1 border-b hover:bg-muted/30 rounded-sm px-1 transition-colors">
-                                      <ChevronDown className="h-4 w-4 transition-transform group-data-[state=closed]/cat:-rotate-90 text-muted-foreground" />
-                                      <h4 className="text-sm font-semibold text-foreground uppercase tracking-wide">
-                                        {group.name}
-                                      </h4>
-                                      <Badge variant="outline" className="text-xs">
-                                        {group.items.length}
-                                      </Badge>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent>
-                                      <Table>
-                                        <TableHeader>
-                                          <TableRow>
-                                            <TableHead>Item</TableHead>
-                                            <TableHead>Serving</TableHead>
-                                            <TableHead>Allergens</TableHead>
-                                            <TableHead>Dietary</TableHead>
-                                          </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                          {group.items.map((item) => (
-                                            <>
-                                              <TableRow
-                                                key={item.id}
-                                                className="cursor-pointer hover:bg-muted/50"
-                                                onClick={() =>
-                                                  setExpandedItem(expandedItem === item.id ? null : item.id)
-                                                }
-                                              >
-                                                <TableCell className="font-medium">{item.name}</TableCell>
-                                                <TableCell className="text-sm text-muted-foreground">
-                                                  {item.serving_size || "—"}
-                                                </TableCell>
-                                                <TableCell>
-                                                  <div className="flex flex-wrap gap-1">
-                                                    {Array.isArray(item.allergens) &&
-                                                      (item.allergens as string[]).map((a, i) => (
-                                                        <Badge
-                                                          key={i}
-                                                          variant="destructive"
-                                                          className="text-xs"
-                                                        >
-                                                          <AlertTriangle className="h-3 w-3 mr-1" />
-                                                          {typeof a === 'string' ? a.split("(")[0].trim() : String(a)}
-                                                        </Badge>
-                                                      ))}
-                                                  </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                  <div className="flex flex-wrap gap-1">
-                                                    {Array.isArray(item.dietary_flags) &&
-                                                      (item.dietary_flags as string[]).map((d, i) => (
-                                                        <Badge
-                                                          key={i}
-                                                          className="text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
-                                                        >
-                                                          <Leaf className="h-3 w-3 mr-1" />
-                                                          {String(d)}
-                                                        </Badge>
-                                                      ))}
-                                                  </div>
-                                                </TableCell>
-                                              </TableRow>
-                                              {expandedItem === item.id && (
-                                                <TableRow key={`${item.id}-nutrition`}>
-                                                  <TableCell colSpan={4} className="p-0">
-                                                    <NutritionPanel nutrients={item.nutrients} />
-                                                  </TableCell>
-                                                </TableRow>
-                                              )}
-                                            </>
-                                          ))}
-                                        </TableBody>
-                                      </Table>
-                                    </CollapsibleContent>
-                                  </Collapsible>
-                                ))}
-                              </div>
-                            )}
-                          </AccordionContent>
-                        </AccordionItem>
-                      );
-                    })}
-                  </Accordion>
-                )}
-              </TabsContent>
-            ))}
-          </Tabs>
-        )}
-      </div>
+      </nav>
     </div>
   );
 };
