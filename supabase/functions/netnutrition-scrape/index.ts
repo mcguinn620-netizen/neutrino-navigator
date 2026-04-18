@@ -493,6 +493,7 @@ async function upsertItem(
 /** Process items from an itemPanel, using cbo_nn_itemGroupRow as category key when present. */
 async function processItemPanel(
   supabase: SupabaseAny,
+  session: SessionState,
   stationId: string,
   itemPanelHtml: string,
 ): Promise<number> {
@@ -525,7 +526,7 @@ async function processItemPanel(
       );
 
       for (const item of category.items) {
-        await upsertItem(supabase, stationId, categoryId, item);
+        await upsertItem(supabase, session, stationId, categoryId, item);
         total++;
       }
     }
@@ -537,11 +538,60 @@ async function processItemPanel(
   console.log(`    Found ${foodItems.length} ungrouped food items`);
 
   for (const item of foodItems) {
-    await upsertItem(supabase, stationId, null, item);
+    await upsertItem(supabase, session, stationId, null, item);
   }
 
   return foodItems.length;
 }
+
+/** Try to fetch items from a "Daily Menu"-style station that lists menus rather than items. */
+async function processDailyMenuStation(
+  supabase: SupabaseAny,
+  session: SessionState,
+  stationId: string,
+  childResponseHtml: string,
+): Promise<number> {
+  // Look for menu links in any panel of the response
+  const candidates = [
+    extractPanelHtml(childResponseHtml, "itemPanel"),
+    extractPanelHtml(childResponseHtml, "selectedUnitPanel"),
+    extractPanelHtml(childResponseHtml, "menuListPanel"),
+    childResponseHtml,
+  ];
+  let menus: { name: string; menuOid: number }[] = [];
+  for (const html of candidates) {
+    if (!html) continue;
+    menus = parseMenus(html);
+    if (menus.length > 0) break;
+  }
+
+  if (menus.length === 0) {
+    console.log(`    No daily menus found for station`);
+    return 0;
+  }
+
+  console.log(`    Found ${menus.length} daily menus, drilling in...`);
+  let total = 0;
+  for (const menu of menus) {
+    console.log(`      Menu: ${menu.name} (${menu.menuOid})`);
+    const menuRes = await postWithRetry(session, "/Menu/SelectMenu", {
+      menuOid: menu.menuOid,
+    });
+    if (isStartupError(menuRes)) continue;
+
+    const menuItemHtml = extractPanelHtml(menuRes, "itemPanel");
+    if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
+      total += await processItemPanel(
+        supabase,
+        session,
+        stationId,
+        menuItemHtml,
+      );
+    }
+  }
+  return total;
+}
+
 
 /** POST with session recovery — re-inits session if Start-up Error is returned. */
 async function postWithRetry(
