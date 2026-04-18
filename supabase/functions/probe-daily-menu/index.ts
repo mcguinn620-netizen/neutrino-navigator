@@ -81,13 +81,20 @@ Deno.serve(async (req) => {
 
     let cookies = await init();
 
-    let r = await post(cookies, "/Unit/SelectUnitFromSideBar", { unitOid: hallOid });
-    cookies = r.cookies;
-    const hallResp = r.text;
+    async function postWithRetry(path: string, body: Record<string, string|number>, max=3): Promise<string> {
+      for (let i = 0; i < max; i++) {
+        const r = await post(cookies, path, body);
+        cookies = r.cookies;
+        if (!r.text.includes("NetNutrition Start-up Error")) return r.text;
+        cookies = await init();
+      }
+      const r = await post(cookies, path, body);
+      cookies = r.cookies;
+      return r.text;
+    }
 
-    r = await post(cookies, "/Unit/SelectUnitFromChildUnitsList", { unitOid: stationOid });
-    cookies = r.cookies;
-    const stationResp = r.text;
+    const hallResp = await postWithRetry("/Unit/SelectUnitFromSideBar", { unitOid: hallOid });
+    const stationResp = await postWithRetry("/Unit/SelectUnitFromChildUnitsList", { unitOid: stationOid });
 
     // Try to parse panels
     const panels: { id: string; length: number; sample: string }[] = [];
