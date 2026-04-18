@@ -1280,13 +1280,14 @@ async function scrapeSingleHall(
   return { hallName: hall.name, itemsCount: totalItems };
 }
 
-async function invokeHallScrape(
+/** Fire-and-forget child invocation. Does NOT await response (avoids parent timeout). */
+function dispatchHallScrape(
   supabaseUrl: string,
   anonKey: string,
   hall: { name: string; unitOid: number },
   wipe: boolean,
-): Promise<InvokedHallResult> {
-  const res = await fetch(`${supabaseUrl}/functions/v1/netnutrition-scrape`, {
+): void {
+  fetch(`${supabaseUrl}/functions/v1/netnutrition-scrape`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1294,68 +1295,9 @@ async function invokeHallScrape(
       "Authorization": `Bearer ${anonKey}`,
     },
     body: JSON.stringify({ hallUnitOid: hall.unitOid, wipe }),
+  }).catch((err) => {
+    console.error(`Failed to dispatch ${hall.name}:`, err);
   });
-
-  const text = await res.text();
-  let payload: Record<string, unknown> = {};
-  try {
-    payload = text ? JSON.parse(text) as Record<string, unknown> : {};
-  } catch {
-    payload = { error: text };
-  }
-
-  if (!res.ok || payload.success === false) {
-    return {
-      success: false,
-      hallName: hall.name,
-      itemsCount: 0,
-      error: typeof payload.error === "string"
-        ? payload.error
-        : typeof payload.message === "string"
-          ? payload.message
-          : `Hall scrape failed with status ${res.status}`,
-    };
-  }
-
-  return {
-    success: true,
-    hallName: typeof payload.hallName === "string" ? payload.hallName : hall.name,
-    itemsCount: typeof payload.itemsCount === "number" ? payload.itemsCount : 0,
-  };
-}
-
-async function invokeHallScrapesInBatches(
-  supabaseUrl: string,
-  anonKey: string,
-  halls: { name: string; unitOid: number }[],
-  wipe: boolean,
-  batchSize = 4,
-): Promise<InvokedHallResult[]> {
-  const results: InvokedHallResult[] = [];
-
-  for (let i = 0; i < halls.length; i += batchSize) {
-    const batch = halls.slice(i, i + batchSize);
-    const settled = await Promise.allSettled(
-      batch.map((hall) => invokeHallScrape(supabaseUrl, anonKey, hall, wipe)),
-    );
-
-    settled.forEach((result, index) => {
-      const hall = batch[index];
-      if (result.status === "fulfilled") {
-        results.push(result.value);
-        return;
-      }
-
-      results.push({
-        success: false,
-        hallName: hall.name,
-        itemsCount: 0,
-        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      });
-    });
-  }
-
-  return results;
 }
 
 Deno.serve(async (req) => {
@@ -1403,7 +1345,7 @@ Deno.serve(async (req) => {
     const discoveredHalls = await discoverDiningHalls(discoverySession);
 
     console.log(
-      `Dispatching ${discoveredHalls.length} hall scrapes:`,
+      `Dispatching ${discoveredHalls.length} hall scrapes (fire-and-forget):`,
       discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
     );
 
@@ -1413,48 +1355,24 @@ Deno.serve(async (req) => {
       items_count: 0,
     });
 
-    const hallResults = await invokeHallScrapesInBatches(
-      supabaseUrl,
-      anonKey,
-      discoveredHalls,
-      wipe,
-    );
-
-    const totalItems = hallResults.reduce((sum, result) => sum + result.itemsCount, 0);
-    const failures = hallResults.filter((result) => !result.success);
-
-    await supabase.from("scrape_logs").insert({
-      status: failures.length > 0 ? "partial" : "success",
-      message: failures.length > 0
-        ? `Scraped ${totalItems} items with ${failures.length} hall failures`
-        : `Scraped ${totalItems} items from ${discoveredHalls.length} halls`,
-      items_count: totalItems,
-    });
-
-    if (failures.length > 0) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: `Refresh completed with ${failures.length} hall failures`,
-          itemsCount: totalItems,
-          failures,
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+    // Fire-and-forget every hall. Each child invocation is its own edge function call
+    // with its own wall-clock budget. They self-log to scrape_logs.
+    // Stagger dispatch slightly so we don't slam NetNutrition all at once.
+    for (let i = 0; i < discoveredHalls.length; i++) {
+      dispatchHallScrape(supabaseUrl, anonKey, discoveredHalls[i], wipe);
+      if (i < discoveredHalls.length - 1) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
     }
-
-    console.log(`\nRefresh complete: ${totalItems} items total`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Scraped ${totalItems} items from ${discoveredHalls.length} dining halls`,
-        itemsCount: totalItems,
+        message: `Dispatched ${discoveredHalls.length} hall scrapes. They will complete in the background — check back in 1–3 minutes.`,
+        hallsDispatched: discoveredHalls.length,
+        halls: discoveredHalls.map((h) => h.name),
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Scrape error:", error);

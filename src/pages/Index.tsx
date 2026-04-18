@@ -104,8 +104,20 @@ const Index = () => {
       return data;
     },
     onSuccess: (data) => {
-      toast({ title: "Updated", description: data.message });
-      queryClient.invalidateQueries();
+      const dispatched = data?.hallsDispatched ?? 0;
+      toast({
+        title: "Refresh started",
+        description: dispatched > 0
+          ? `Scraping ${dispatched} dining halls in the background. New data will appear in 1–3 minutes.`
+          : data?.message ?? "Refresh started",
+      });
+      // Poll for new data every 10s for up to 4 minutes
+      let polls = 0;
+      const interval = setInterval(() => {
+        polls += 1;
+        queryClient.invalidateQueries();
+        if (polls >= 24) clearInterval(interval);
+      }, 10000);
     },
     onError: (error) => {
       toast({ title: "Refresh failed", description: error.message, variant: "destructive" });
