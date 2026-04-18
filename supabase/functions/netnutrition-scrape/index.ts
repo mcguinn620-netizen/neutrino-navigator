@@ -636,20 +636,23 @@ async function processDailyMenuStation(
   return total;
 }
 
-/** Parse menu links along with their date row label so we can prefix categories. */
+/** Parse menu links along with their nearest preceding date label.
+ * Robust to either <tr class='cbo_nn_menu(Primary|Alternate)Row'> structure
+ * or plain HTML where date headers and menu links are siblings. */
 function parseMenusWithDates(
   html: string,
 ): { name: string; menuOid: number; dateLabel?: string }[] {
   const out: { name: string; menuOid: number; dateLabel?: string }[] = [];
   const seen = new Set<number>();
 
+  // Pass 1 — table-row style (preferred when present)
   const rowRegex =
-    /<tr[^>]*class=['"]cbo_nn_menu(?:Primary|Alternate)Row['"][^>]*>([\s\S]*?)<\/tr>/gi;
+    /<tr[^>]*class=['"][^'"]*cbo_nn_menu(?:Primary|Alternate)Row[^'"]*['"][^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const row = rowMatch[1];
     const dateMatch = row.match(
-      /<td[^>]*>\s*((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})\s*<\/td>/i,
+      /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/i,
     );
     const dateLabel = dateMatch
       ? dateMatch[1].replace(/\s+/g, " ").trim()
@@ -668,18 +671,36 @@ function parseMenusWithDates(
     }
   }
 
-  if (out.length === 0) {
-    const generic =
-      /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
-    let m;
-    while ((m = generic.exec(html)) !== null) {
-      const oid = parseInt(m[1]);
-      const name = m[2].replace(/&nbsp;/g, " ").trim();
-      if (name && !seen.has(oid)) {
-        seen.add(oid);
-        out.push({ menuOid: oid, name });
+  if (out.length > 0) return out;
+
+  // Pass 2 — sequential scan: pair each selectMenu(N) link with the nearest
+  // preceding date label found in the HTML. Works for div/anchor layouts.
+  const dateRegex =
+    /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/gi;
+  const dates: { idx: number; label: string }[] = [];
+  let dm;
+  while ((dm = dateRegex.exec(html)) !== null) {
+    dates.push({ idx: dm.index, label: dm[1].replace(/\s+/g, " ").trim() });
+  }
+
+  const linkRegex =
+    /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
+  let lm;
+  while ((lm = linkRegex.exec(html)) !== null) {
+    const oid = parseInt(lm[1]);
+    const name = lm[2].replace(/&nbsp;/g, " ").trim();
+    if (!name || seen.has(oid)) continue;
+    seen.add(oid);
+
+    // Find nearest preceding date label
+    let dateLabel: string | undefined;
+    for (let i = dates.length - 1; i >= 0; i--) {
+      if (dates[i].idx < lm.index) {
+        dateLabel = dates[i].label;
+        break;
       }
     }
+    out.push({ menuOid: oid, name, dateLabel });
   }
 
   return out;
