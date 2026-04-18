@@ -1,4 +1,4 @@
-// Diagnostic: probe what the NetNutrition "Daily Menu" station response looks like.
+// Probe a single station drill-down and dump full HTML response so we can see structure.
 const BASE_URL = "http://netnutrition.bsu.edu/NetNutrition/1";
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15";
@@ -18,6 +18,18 @@ function collectCookies(res: Response, cookies: string[]): string[] {
     const idx = updated.findIndex((x) => x.startsWith(name + "="));
     if (idx >= 0) updated[idx] = value;
     else updated.push(value);
+  }
+  if (setCookies.length === 0) {
+    const raw = res.headers.get("set-cookie");
+    if (raw) {
+      for (const part of raw.split(/,(?=\s*\w+=)/)) {
+        const value = part.split(";")[0].trim();
+        const name = value.split("=")[0];
+        const idx = updated.findIndex((x) => x.startsWith(name + "="));
+        if (idx >= 0) updated[idx] = value;
+        else updated.push(value);
+      }
+    }
   }
   return updated;
 }
@@ -79,59 +91,50 @@ Deno.serve(async (req) => {
     const hallOid = parseInt(url.searchParams.get("hall") ?? "16");
     const stationOid = parseInt(url.searchParams.get("station") ?? "17");
 
-    let cookies = await init();
-
-    async function postWithRetry(path: string, body: Record<string, string|number>, max=3): Promise<string> {
-      for (let i = 0; i < max; i++) {
-        const r = await post(cookies, path, body);
-        cookies = r.cookies;
-        if (!r.text.includes("NetNutrition Start-up Error")) return r.text;
-        cookies = await init();
+    let cookies: string[] = [];
+    let lastResp = "";
+    // Up to 5 attempts to get past start-up errors
+    for (let attempt = 0; attempt < 5; attempt++) {
+      cookies = await init();
+      const r1 = await post(cookies, "/Unit/SelectUnitFromSideBar", { unitOid: hallOid });
+      cookies = r1.cookies;
+      if (r1.text.includes("NetNutrition Start-up Error")) {
+        lastResp = "hall startup err attempt " + attempt;
+        continue;
       }
-      const r = await post(cookies, path, body);
-      cookies = r.cookies;
-      return r.text;
+      const r2 = await post(cookies, "/Unit/SelectUnitFromChildUnitsList", {
+        unitOid: stationOid,
+      });
+      cookies = r2.cookies;
+      lastResp = r2.text;
+      if (!r2.text.includes("NetNutrition Start-up Error")) break;
     }
 
-    const hallResp = await postWithRetry("/Unit/SelectUnitFromSideBar", { unitOid: hallOid });
-    const stationResp = await postWithRetry("/Unit/SelectUnitFromChildUnitsList", { unitOid: stationOid });
+    // Try to parse panels and return everything
+    const out: {
+      attemptsResp: string;
+      raw?: string;
+      panels?: { id: string; length: number; full: string }[];
+    } = { attemptsResp: lastResp.substring(0, 100) };
 
-    // Try to parse panels
-    const panels: { id: string; length: number; sample: string }[] = [];
     try {
-      const json = JSON.parse(stationResp);
+      const json = JSON.parse(lastResp);
       if (Array.isArray(json.panels)) {
-        for (const p of json.panels) {
-          panels.push({
-            id: p.id,
-            length: p.html?.length ?? 0,
-            sample: (p.html ?? "").substring(0, 6000),
-          });
-        }
+        out.panels = json.panels.map((p: { id: string; html?: string }) => ({
+          id: p.id,
+          length: p.html?.length ?? 0,
+          full: p.html ?? "",
+        }));
+      } else {
+        out.raw = lastResp;
       }
     } catch {
-      // not JSON
+      out.raw = lastResp;
     }
 
-    return new Response(
-      JSON.stringify(
-        {
-          hallOid,
-          stationOid,
-          hallRespStartsWith: hallResp.substring(0, 200),
-          hallRespIsStartupError:
-            hallResp.includes("NetNutrition Start-up Error"),
-          stationRespLength: stationResp.length,
-          stationRespIsStartupError:
-            stationResp.includes("NetNutrition Start-up Error"),
-          stationRespStartsWith: stationResp.substring(0, 400),
-          panels,
-        },
-        null,
-        2,
-      ),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify(out, null, 2), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : String(e) }),
