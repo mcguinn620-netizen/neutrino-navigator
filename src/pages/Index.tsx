@@ -98,8 +98,9 @@ const Index = () => {
 
   const scrapeMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("netnutrition-scrape", { body: {} });
+      const { data, error } = await supabase.functions.invoke("netnutrition-scrape", { body: { wipe: true } });
       if (error) throw error;
+      if (data?.success === false) throw new Error(data?.message || "Refresh failed");
       return data;
     },
     onSuccess: (data) => {

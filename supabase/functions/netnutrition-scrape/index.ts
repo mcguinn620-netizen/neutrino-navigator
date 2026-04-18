@@ -833,169 +833,285 @@ async function postWithRetry(
   return await postWithSession(session, path, body);
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+interface ScrapeRequestBody {
+  hallUnitOid?: number;
+  wipe?: boolean;
+}
+
+interface HallScrapeResult {
+  hallName: string;
+  itemsCount: number;
+}
+
+interface InvokedHallResult extends HallScrapeResult {
+  success: boolean;
+  error?: string;
+}
+
+async function readRequestBody(req: Request): Promise<ScrapeRequestBody> {
+  if (req.method !== "POST") return {};
+  const raw = await req.text();
+  if (!raw.trim()) return {};
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceKey);
+    return JSON.parse(raw) as ScrapeRequestBody;
+  } catch {
+    return {};
+  }
+}
 
-    console.log("Starting NetNutrition scrape...");
+async function fetchInitialPageHtml(session: SessionState): Promise<string> {
+  const headers = {
+    "Cookie": session.cookies.join("; "),
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+    "Accept":
+      "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  };
 
-    let session = await initSession();
-    console.log("Session established, cookies:", session.cookies.length);
+  const initPageRes = await fetch(BASE_URL, { headers });
+  session.cookies = collectCookies(initPageRes, session.cookies);
+  const initPageHtml = await initPageRes.text();
+  console.log(`Initial page loaded, length: ${initPageHtml.length}`);
 
-    const initPageRes = await fetch(BASE_URL, {
-      headers: {
-        "Cookie": session.cookies.join("; "),
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-        "Accept":
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
+  if (!isStartupError(initPageHtml)) return initPageHtml;
 
-    session.cookies = collectCookies(initPageRes, session.cookies);
-    const initPageHtml = await initPageRes.text();
-    console.log(`Initial page loaded, length: ${initPageHtml.length}`);
+  console.log("Initial page returned Start-up Error, re-initializing session...");
+  const newSession = await initSession();
+  session.cookies = newSession.cookies;
 
-    if (isStartupError(initPageHtml)) {
+  const retryRes = await fetch(BASE_URL, {
+    headers: {
+      ...headers,
+      "Cookie": session.cookies.join("; "),
+    },
+  });
+
+  session.cookies = collectCookies(retryRes, session.cookies);
+  const retryHtml = await retryRes.text();
+  console.log(`Retry page loaded, length: ${retryHtml.length}`);
+  return retryHtml;
+}
+
+async function discoverDiningHalls(
+  session: SessionState,
+): Promise<{ name: string; unitOid: number }[]> {
+  const initPageHtml = await fetchInitialPageHtml(session);
+  let discoveredHalls = parseHallsFromPage(initPageHtml);
+  console.log(
+    `Discovered ${discoveredHalls.length} dining halls from page`,
+  );
+
+  if (discoveredHalls.length === 0) {
+    console.log(
+      "Dynamic discovery failed, using known hall list as fallback",
+    );
+    discoveredHalls = KNOWN_HALLS;
+  }
+
+  return discoveredHalls;
+}
+
+async function cleanupHallData(
+  supabase: SupabaseAny,
+  hallId: string,
+  hallName: string,
+): Promise<void> {
+  const { data: existingStations, error: stationReadError } = await supabase
+    .from("stations")
+    .select("id")
+    .eq("dining_hall_id", hallId);
+
+  if (stationReadError) {
+    throw new Error(
+      `Failed reading existing stations for ${hallName}: ${stationReadError.message}`,
+    );
+  }
+
+  const stationIds = ((existingStations as { id: string }[] | null) ?? []).map((s) => s.id);
+  if (stationIds.length === 0) return;
+
+  console.log(`  Wiping ${stationIds.length} existing stations for ${hallName}`);
+
+  const { error: itemDeleteError } = await supabase
+    .from("food_items")
+    .delete()
+    .in("station_id", stationIds);
+  if (itemDeleteError) {
+    throw new Error(
+      `Failed deleting food items for ${hallName}: ${itemDeleteError.message}`,
+    );
+  }
+
+  const { error: categoryDeleteError } = await supabase
+    .from("menu_categories")
+    .delete()
+    .in("station_id", stationIds);
+  if (categoryDeleteError) {
+    throw new Error(
+      `Failed deleting categories for ${hallName}: ${categoryDeleteError.message}`,
+    );
+  }
+
+  const { error: stationDeleteError } = await supabase
+    .from("stations")
+    .delete()
+    .eq("dining_hall_id", hallId);
+  if (stationDeleteError) {
+    throw new Error(
+      `Failed deleting stations for ${hallName}: ${stationDeleteError.message}`,
+    );
+  }
+}
+
+async function scrapeSingleHall(
+  supabase: SupabaseAny,
+  hall: { name: string; unitOid: number },
+  wipe: boolean,
+): Promise<HallScrapeResult> {
+  console.log(`\n=== Scraping: ${hall.name} (unitOid: ${hall.unitOid}) ===`);
+
+  const { data: hallData, error: hallError } = await supabase
+    .from("dining_halls")
+    .upsert(
+      { name: hall.name, unit_oid: hall.unitOid },
+      { onConflict: "unit_oid" },
+    )
+    .select("id")
+    .single();
+
+  if (hallError || !hallData) {
+    throw new Error(`Error upserting hall ${hall.name}: ${hallError?.message ?? "Unknown error"}`);
+  }
+
+  if (wipe) {
+    await cleanupHallData(supabase, hallData.id, hall.name);
+  }
+
+  const session = await initSession();
+  console.log("Session established, cookies:", session.cookies.length);
+  await fetchInitialPageHtml(session);
+
+  let totalItems = 0;
+  const sidebarResponse = await postWithRetry(
+    session,
+    "/Unit/SelectUnitFromSideBar",
+    { unitOid: hall.unitOid },
+  );
+
+  if (isStartupError(sidebarResponse)) {
+    throw new Error(`Persistent Start-up Error while opening ${hall.name}`);
+  }
+
+  const childUnitsHtml = extractPanelHtml(sidebarResponse, "childUnitsPanel");
+  const itemPanelHtml = extractPanelHtml(sidebarResponse, "itemPanel");
+  const menuPanelHtml = extractPanelHtml(sidebarResponse, "menuPanel");
+
+  try {
+    const parsed = JSON.parse(sidebarResponse);
+    if (Array.isArray(parsed.panels)) {
+      const summary = parsed.panels
+        .map((p: { id: string; html?: string }) => `${p.id}=${p.html?.length ?? 0}`)
+        .join(", ");
+      console.log(`  [panels] ${hall.name}: ${summary}`);
+    }
+  } catch {
+    console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
+  }
+
+  let hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
+
+  if (hallMenus.length === 0 && childUnitsHtml) {
+    const fromChild = parseMenusWithDates(childUnitsHtml);
+    if (fromChild.length > 0) {
       console.log(
-        "Initial page returned Start-up Error, re-initializing session...",
+        `  [menus] ${hall.name}: found ${fromChild.length} dated menus in childUnitsPanel`,
       );
-      session = await initSession();
+      hallMenus = fromChild;
+    }
+  }
 
-      const retryRes = await fetch(BASE_URL, {
-        headers: {
-          "Cookie": session.cookies.join("; "),
-          "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-          "Accept":
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  if (hallMenus.length === 0 && itemPanelHtml) {
+    const fromItem = parseMenusWithDates(itemPanelHtml);
+    if (fromItem.length > 0) {
+      console.log(
+        `  [menus] ${hall.name}: found ${fromItem.length} dated menus in itemPanel`,
+      );
+      hallMenus = fromItem;
+    }
+  }
+
+  if (hallMenus.length > 0) {
+    console.log(
+      `  Hall ${hall.name} exposes ${hallMenus.length} dated menus — splitting into per-meal stations`,
+    );
+    totalItems += await processHallMenuList(
+      supabase,
+      session,
+      hallData.id,
+      hall.unitOid,
+      hallMenus,
+    );
+    return { hallName: hall.name, itemsCount: totalItems };
+  }
+
+  if (itemPanelHtml && itemPanelHtml.includes("cbo_nn_itemHover")) {
+    console.log(
+      `  Hall ${hall.name} returned items directly (no stations, no menu list)`,
+    );
+
+    const { data: stationData, error: stationError } = await supabase
+      .from("stations")
+      .upsert(
+        {
+          dining_hall_id: hallData.id,
+          name: hall.name,
+          unit_oid: hall.unitOid,
         },
-      });
+        { onConflict: "unit_oid" },
+      )
+      .select("id")
+      .single();
 
-      session.cookies = collectCookies(retryRes, session.cookies);
-      const retryHtml = await retryRes.text();
-      console.log(`Retry page loaded, length: ${retryHtml.length}`);
-    }
-
-    let discoveredHalls = parseHallsFromPage(initPageHtml);
-    console.log(
-      `Discovered ${discoveredHalls.length} dining halls from page`,
-    );
-
-    if (discoveredHalls.length === 0) {
-      console.log(
-        "Dynamic discovery failed, using known hall list as fallback",
-      );
-      discoveredHalls = KNOWN_HALLS;
-    }
-
-    console.log(
-      `Scraping ${discoveredHalls.length} halls:`,
-      discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
-    );
-
-    let totalItems = 0;
-
-    for (const hall of discoveredHalls) {
-      console.log(
-        `\n=== Scraping: ${hall.name} (unitOid: ${hall.unitOid}) ===`,
-      );
-
-      const { data: hallData, error: hallError } = await supabase
-        .from("dining_halls")
-        .upsert(
-          { name: hall.name, unit_oid: hall.unitOid },
-          { onConflict: "unit_oid" },
-        )
-        .select("id")
-        .single();
-
-      if (hallError) {
-        console.error(`Error upserting hall ${hall.name}:`, hallError);
-        continue;
-      }
-
-      const sidebarResponse = await postWithRetry(
+    if (!stationError && stationData) {
+      totalItems += await processItemPanel(
+        supabase,
         session,
-        "/Unit/SelectUnitFromSideBar",
-        { unitOid: hall.unitOid },
+        stationData.id,
+        itemPanelHtml,
+      );
+    }
+
+    return { hallName: hall.name, itemsCount: totalItems };
+  }
+
+  const stations = parseStations(childUnitsHtml);
+  console.log(`  Found ${stations.length} stations`);
+
+  if (stations.length === 0) {
+    console.log(
+      "  childUnitsHtml sample (first 500 chars):",
+      childUnitsHtml.substring(0, 500),
+    );
+
+    console.log(
+      `  Trying SelectUnitFromChildUnitsList as fallback for ${hall.name}...`,
+    );
+    const childFallback = await postWithRetry(
+      session,
+      "/Unit/SelectUnitFromChildUnitsList",
+      { unitOid: hall.unitOid },
+    );
+
+    if (!isStartupError(childFallback)) {
+      const fallbackItemHtml = extractPanelHtml(childFallback, "itemPanel");
+      const fallbackChildHtml = extractPanelHtml(
+        childFallback,
+        "childUnitsPanel",
       );
 
-      if (isStartupError(sidebarResponse)) {
-        console.log(
-          `  Skipping ${hall.name}: persistent Start-up Error after retries`,
-        );
-        continue;
-      }
-
-      const childUnitsHtml = extractPanelHtml(sidebarResponse, "childUnitsPanel");
-      const itemPanelHtml = extractPanelHtml(sidebarResponse, "itemPanel");
-      const menuPanelHtml = extractPanelHtml(sidebarResponse, "menuPanel");
-
-      // Debug: dump panel ids+sizes so we can see what NetNutrition returned
-      try {
-        const parsed = JSON.parse(sidebarResponse);
-        if (Array.isArray(parsed.panels)) {
-          const summary = parsed.panels
-            .map((p: { id: string; html?: string }) => `${p.id}=${p.html?.length ?? 0}`)
-            .join(", ");
-          console.log(`  [panels] ${hall.name}: ${summary}`);
-        }
-      } catch {
-        console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
-      }
-
-      // Prefer dated menu drill-in when the hall exposes a menuPanel —
-      // this is how Woodworth, North Dining, Tom John, Bookmark return
-      // their Lunch / Dinner per date selection.
-      let hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
-
-      // Fallback: some halls put the dated menu links inside childUnitsPanel
-      // or itemPanel. Scan those before falling back to flat-hall behavior.
-      if (hallMenus.length === 0 && childUnitsHtml) {
-        const fromChild = parseMenusWithDates(childUnitsHtml);
-        if (fromChild.length > 0) {
-          console.log(
-            `  [menus] ${hall.name}: found ${fromChild.length} dated menus in childUnitsPanel`,
-          );
-          hallMenus = fromChild;
-        }
-      }
-      if (hallMenus.length === 0 && itemPanelHtml) {
-        const fromItem = parseMenusWithDates(itemPanelHtml);
-        if (fromItem.length > 0) {
-          console.log(
-            `  [menus] ${hall.name}: found ${fromItem.length} dated menus in itemPanel`,
-          );
-          hallMenus = fromItem;
-        }
-      }
-
-      if (hallMenus.length > 0) {
-        console.log(
-          `  Hall ${hall.name} exposes ${hallMenus.length} dated menus — splitting into per-meal stations`,
-        );
-        totalItems += await processHallMenuList(
-          supabase,
-          session,
-          hallData.id,
-          hall.unitOid,
-          hallMenus,
-        );
-        continue;
-      }
-
-      if (itemPanelHtml && itemPanelHtml.includes("cbo_nn_itemHover")) {
-        console.log(
-          `  Hall ${hall.name} returned items directly (no stations, no menu list)`,
-        );
-
+      if (fallbackItemHtml && fallbackItemHtml.includes("cbo_nn_itemHover")) {
+        console.log(`  Fallback: found items directly for ${hall.name}`);
         const { data: stationData, error: stationError } = await supabase
           .from("stations")
           .upsert(
@@ -1014,226 +1130,328 @@ Deno.serve(async (req) => {
             supabase,
             session,
             stationData.id,
-            itemPanelHtml,
+            fallbackItemHtml,
           );
         }
-        continue;
-      }
-
-      const stations = parseStations(childUnitsHtml);
-      console.log(`  Found ${stations.length} stations`);
-
-      if (stations.length === 0) {
+      } else {
+        const fallbackStations = parseStations(fallbackChildHtml);
         console.log(
-          "  childUnitsHtml sample (first 500 chars):",
-          childUnitsHtml.substring(0, 500),
+          `  Fallback: found ${fallbackStations.length} child units for ${hall.name}`,
         );
 
-        console.log(
-          `  Trying SelectUnitFromChildUnitsList as fallback for ${hall.name}...`,
-        );
-        const childFallback = await postWithRetry(
-          session,
-          "/Unit/SelectUnitFromChildUnitsList",
-          { unitOid: hall.unitOid },
-        );
-
-        if (!isStartupError(childFallback)) {
-          const fallbackItemHtml = extractPanelHtml(childFallback, "itemPanel");
-          const fallbackChildHtml = extractPanelHtml(
-            childFallback,
-            "childUnitsPanel",
-          );
-
-          if (fallbackItemHtml && fallbackItemHtml.includes("cbo_nn_itemHover")) {
-            console.log(`  Fallback: found items directly for ${hall.name}`);
-            const { data: stationData, error: stationError } = await supabase
-              .from("stations")
-              .upsert(
-                {
-                  dining_hall_id: hallData.id,
-                  name: hall.name,
-                  unit_oid: hall.unitOid,
-                },
-                { onConflict: "unit_oid" },
-              )
-              .select("id")
-              .single();
-
-            if (!stationError && stationData) {
-              totalItems += await processItemPanel(
-                supabase,
-                session,
-                stationData.id,
-                fallbackItemHtml,
-              );
-            }
-          } else {
-            const fallbackStations = parseStations(fallbackChildHtml);
-            console.log(
-              `  Fallback: found ${fallbackStations.length} child units for ${hall.name}`,
-            );
-
-            for (const fStation of fallbackStations) {
-              console.log(
-                `    Fallback station: ${fStation.name} (${fStation.unitOid})`,
-              );
-
-              const { data: stationData, error: stationError } = await supabase
-                .from("stations")
-                .upsert(
-                  {
-                    dining_hall_id: hallData.id,
-                    name: fStation.name,
-                    unit_oid: fStation.unitOid,
-                  },
-                  { onConflict: "unit_oid" },
-                )
-                .select("id")
-                .single();
-
-              if (stationError || !stationData) continue;
-
-              const nestedRes = await postWithRetry(
-                session,
-                "/Unit/SelectUnitFromChildUnitsList",
-                { unitOid: fStation.unitOid },
-              );
-              if (isStartupError(nestedRes)) continue;
-
-              const nestedItemHtml = extractPanelHtml(nestedRes, "itemPanel");
-              if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
-                totalItems += await processItemPanel(
-                  supabase,
-                  session,
-                  stationData.id,
-                  nestedItemHtml,
-                );
-              }
-            }
-          }
-        }
-
-        continue;
-      }
-
-      for (const station of stations) {
-        console.log(
-          `  Station: ${station.name} (unitOid: ${station.unitOid})`,
-        );
-
-        const { data: stationData, error: stationError } = await supabase
-          .from("stations")
-          .upsert(
-            {
-              dining_hall_id: hallData.id,
-              name: station.name,
-              unit_oid: station.unitOid,
-            },
-            { onConflict: "unit_oid" },
-          )
-          .select("id")
-          .single();
-
-        if (stationError) {
-          console.error(
-            `  Error upserting station ${station.name}:`,
-            stationError,
-          );
-          continue;
-        }
-
-        const childResponse = await postWithRetry(
-          session,
-          "/Unit/SelectUnitFromChildUnitsList",
-          { unitOid: station.unitOid },
-        );
-
-        if (isStartupError(childResponse)) {
-          console.log(`    Skipping station ${station.name}: Start-up Error`);
-          continue;
-        }
-
-        const stationItemHtml = extractPanelHtml(childResponse, "itemPanel");
-
-        if (stationItemHtml && stationItemHtml.includes("cbo_nn_itemHover")) {
-          totalItems += await processItemPanel(
-            supabase,
-            session,
-            stationData.id,
-            stationItemHtml,
-          );
-          continue;
-        }
-
-        const nestedChildHtml = extractPanelHtml(
-          childResponse,
-          "childUnitsPanel",
-        );
-        const nestedStations = parseStations(nestedChildHtml);
-
-        if (nestedStations.length > 0) {
+        for (const fStation of fallbackStations) {
           console.log(
-            `    Nested stations found: ${nestedStations.length}, drilling down...`,
+            `    Fallback station: ${fStation.name} (${fStation.unitOid})`,
           );
 
-          for (const nested of nestedStations) {
-            const nestedResponse = await postWithRetry(
+          const { data: stationData, error: stationError } = await supabase
+            .from("stations")
+            .upsert(
+              {
+                dining_hall_id: hallData.id,
+                name: fStation.name,
+                unit_oid: fStation.unitOid,
+              },
+              { onConflict: "unit_oid" },
+            )
+            .select("id")
+            .single();
+
+          if (stationError || !stationData) continue;
+
+          const nestedRes = await postWithRetry(
+            session,
+            "/Unit/SelectUnitFromChildUnitsList",
+            { unitOid: fStation.unitOid },
+          );
+          if (isStartupError(nestedRes)) continue;
+
+          const nestedItemHtml = extractPanelHtml(nestedRes, "itemPanel");
+          if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
+            totalItems += await processItemPanel(
+              supabase,
               session,
-              "/Unit/SelectUnitFromChildUnitsList",
-              { unitOid: nested.unitOid },
+              stationData.id,
+              nestedItemHtml,
             );
-            if (isStartupError(nestedResponse)) continue;
-
-            const nestedItemHtml = extractPanelHtml(
-              nestedResponse,
-              "itemPanel",
-            );
-            if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
-              totalItems += await processItemPanel(
-                supabase,
-                session,
-                stationData.id,
-                nestedItemHtml,
-              );
-            }
           }
-          continue;
-        }
-
-        // Daily Menu fallback: station response had no items and no child units —
-        // it likely lists dated menus that need to be selected to reveal items.
-        console.log(
-          `    Station ${station.name} has no items/children — trying daily menu drill-in`,
-        );
-        const dailyCount = await processDailyMenuStation(
-          supabase,
-          session,
-          stationData.id,
-          childResponse,
-        );
-        if (dailyCount > 0) {
-          totalItems += dailyCount;
-        } else {
-          console.log(`    No daily menu items recovered for ${station.name}`);
         }
       }
     }
 
+    return { hallName: hall.name, itemsCount: totalItems };
+  }
+
+  for (const station of stations) {
+    console.log(`  Station: ${station.name} (unitOid: ${station.unitOid})`);
+
+    const { data: stationData, error: stationError } = await supabase
+      .from("stations")
+      .upsert(
+        {
+          dining_hall_id: hallData.id,
+          name: station.name,
+          unit_oid: station.unitOid,
+        },
+        { onConflict: "unit_oid" },
+      )
+      .select("id")
+      .single();
+
+    if (stationError) {
+      console.error(`  Error upserting station ${station.name}:`, stationError);
+      continue;
+    }
+
+    const childResponse = await postWithRetry(
+      session,
+      "/Unit/SelectUnitFromChildUnitsList",
+      { unitOid: station.unitOid },
+    );
+
+    if (isStartupError(childResponse)) {
+      console.log(`    Skipping station ${station.name}: Start-up Error`);
+      continue;
+    }
+
+    const stationItemHtml = extractPanelHtml(childResponse, "itemPanel");
+
+    if (stationItemHtml && stationItemHtml.includes("cbo_nn_itemHover")) {
+      totalItems += await processItemPanel(
+        supabase,
+        session,
+        stationData.id,
+        stationItemHtml,
+      );
+      continue;
+    }
+
+    const nestedChildHtml = extractPanelHtml(
+      childResponse,
+      "childUnitsPanel",
+    );
+    const nestedStations = parseStations(nestedChildHtml);
+
+    if (nestedStations.length > 0) {
+      console.log(
+        `    Nested stations found: ${nestedStations.length}, drilling down...`,
+      );
+
+      for (const nested of nestedStations) {
+        const nestedResponse = await postWithRetry(
+          session,
+          "/Unit/SelectUnitFromChildUnitsList",
+          { unitOid: nested.unitOid },
+        );
+        if (isStartupError(nestedResponse)) continue;
+
+        const nestedItemHtml = extractPanelHtml(
+          nestedResponse,
+          "itemPanel",
+        );
+        if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
+          totalItems += await processItemPanel(
+            supabase,
+            session,
+            stationData.id,
+            nestedItemHtml,
+          );
+        }
+      }
+      continue;
+    }
+
+    console.log(
+      `    Station ${station.name} has no items/children — trying daily menu drill-in`,
+    );
+    const dailyCount = await processDailyMenuStation(
+      supabase,
+      session,
+      stationData.id,
+      childResponse,
+    );
+    if (dailyCount > 0) {
+      totalItems += dailyCount;
+    } else {
+      console.log(`    No daily menu items recovered for ${station.name}`);
+    }
+  }
+
+  return { hallName: hall.name, itemsCount: totalItems };
+}
+
+async function invokeHallScrape(
+  supabaseUrl: string,
+  anonKey: string,
+  hall: { name: string; unitOid: number },
+  wipe: boolean,
+): Promise<InvokedHallResult> {
+  const res = await fetch(`${supabaseUrl}/functions/v1/netnutrition-scrape`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": anonKey,
+      "Authorization": `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify({ hallUnitOid: hall.unitOid, wipe }),
+  });
+
+  const text = await res.text();
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = text ? JSON.parse(text) as Record<string, unknown> : {};
+  } catch {
+    payload = { error: text };
+  }
+
+  if (!res.ok || payload.success === false) {
+    return {
+      success: false,
+      hallName: hall.name,
+      itemsCount: 0,
+      error: typeof payload.error === "string"
+        ? payload.error
+        : typeof payload.message === "string"
+          ? payload.message
+          : `Hall scrape failed with status ${res.status}`,
+    };
+  }
+
+  return {
+    success: true,
+    hallName: typeof payload.hallName === "string" ? payload.hallName : hall.name,
+    itemsCount: typeof payload.itemsCount === "number" ? payload.itemsCount : 0,
+  };
+}
+
+async function invokeHallScrapesInBatches(
+  supabaseUrl: string,
+  anonKey: string,
+  halls: { name: string; unitOid: number }[],
+  wipe: boolean,
+  batchSize = 4,
+): Promise<InvokedHallResult[]> {
+  const results: InvokedHallResult[] = [];
+
+  for (let i = 0; i < halls.length; i += batchSize) {
+    const batch = halls.slice(i, i + batchSize);
+    const settled = await Promise.allSettled(
+      batch.map((hall) => invokeHallScrape(supabaseUrl, anonKey, hall, wipe)),
+    );
+
+    settled.forEach((result, index) => {
+      const hall = batch[index];
+      if (result.status === "fulfilled") {
+        results.push(result.value);
+        return;
+      }
+
+      results.push({
+        success: false,
+        hallName: hall.name,
+        itemsCount: 0,
+        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    });
+  }
+
+  return results;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+    const body = await readRequestBody(req);
+    const hallUnitOid = typeof body.hallUnitOid === "number" ? body.hallUnitOid : undefined;
+    const wipe = body.wipe ?? true;
+
+    if (hallUnitOid) {
+      const hall = KNOWN_HALLS.find((entry) => entry.unitOid === hallUnitOid) ?? {
+        name: `Hall ${hallUnitOid}`,
+        unitOid: hallUnitOid,
+      };
+
+      console.log(`Starting single-hall scrape for ${hall.name}...`);
+      const result = await scrapeSingleHall(supabase, hall, wipe);
+
+      await supabase.from("scrape_logs").insert({
+        status: "success",
+        message: `${result.hallName}: scraped ${result.itemsCount} items`,
+        items_count: result.itemsCount,
+      });
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          hallName: result.hallName,
+          message: `${result.hallName} scraped successfully`,
+          itemsCount: result.itemsCount,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    console.log("Starting NetNutrition full refresh...");
+    const discoverySession = await initSession();
+    const discoveredHalls = await discoverDiningHalls(discoverySession);
+
+    console.log(
+      `Dispatching ${discoveredHalls.length} hall scrapes:`,
+      discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
+    );
+
     await supabase.from("scrape_logs").insert({
-      status: "success",
-      message:
-        `Scraped ${totalItems} items from ${discoveredHalls.length} halls`,
+      status: "running",
+      message: `Started refresh for ${discoveredHalls.length} halls`,
+      items_count: 0,
+    });
+
+    const hallResults = await invokeHallScrapesInBatches(
+      supabaseUrl,
+      anonKey,
+      discoveredHalls,
+      wipe,
+    );
+
+    const totalItems = hallResults.reduce((sum, result) => sum + result.itemsCount, 0);
+    const failures = hallResults.filter((result) => !result.success);
+
+    await supabase.from("scrape_logs").insert({
+      status: failures.length > 0 ? "partial" : "success",
+      message: failures.length > 0
+        ? `Scraped ${totalItems} items with ${failures.length} hall failures`
+        : `Scraped ${totalItems} items from ${discoveredHalls.length} halls`,
       items_count: totalItems,
     });
 
-    console.log(`\nScrape complete: ${totalItems} items total`);
+    if (failures.length > 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: `Refresh completed with ${failures.length} hall failures`,
+          itemsCount: totalItems,
+          failures,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    console.log(`\nRefresh complete: ${totalItems} items total`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message:
-          `Scraped ${totalItems} items from ${discoveredHalls.length} dining halls`,
+        message: `Scraped ${totalItems} items from ${discoveredHalls.length} dining halls`,
         itemsCount: totalItems,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
