@@ -636,20 +636,23 @@ async function processDailyMenuStation(
   return total;
 }
 
-/** Parse menu links along with their date row label so we can prefix categories. */
+/** Parse menu links along with their nearest preceding date label.
+ * Robust to either <tr class='cbo_nn_menu(Primary|Alternate)Row'> structure
+ * or plain HTML where date headers and menu links are siblings. */
 function parseMenusWithDates(
   html: string,
 ): { name: string; menuOid: number; dateLabel?: string }[] {
   const out: { name: string; menuOid: number; dateLabel?: string }[] = [];
   const seen = new Set<number>();
 
+  // Pass 1 — table-row style (preferred when present)
   const rowRegex =
-    /<tr[^>]*class=['"]cbo_nn_menu(?:Primary|Alternate)Row['"][^>]*>([\s\S]*?)<\/tr>/gi;
+    /<tr[^>]*class=['"][^'"]*cbo_nn_menu(?:Primary|Alternate)Row[^'"]*['"][^>]*>([\s\S]*?)<\/tr>/gi;
   let rowMatch;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const row = rowMatch[1];
     const dateMatch = row.match(
-      /<td[^>]*>\s*((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})\s*<\/td>/i,
+      /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/i,
     );
     const dateLabel = dateMatch
       ? dateMatch[1].replace(/\s+/g, " ").trim()
@@ -668,18 +671,36 @@ function parseMenusWithDates(
     }
   }
 
-  if (out.length === 0) {
-    const generic =
-      /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
-    let m;
-    while ((m = generic.exec(html)) !== null) {
-      const oid = parseInt(m[1]);
-      const name = m[2].replace(/&nbsp;/g, " ").trim();
-      if (name && !seen.has(oid)) {
-        seen.add(oid);
-        out.push({ menuOid: oid, name });
+  if (out.length > 0) return out;
+
+  // Pass 2 — sequential scan: pair each selectMenu(N) link with the nearest
+  // preceding date label found in the HTML. Works for div/anchor layouts.
+  const dateRegex =
+    /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/gi;
+  const dates: { idx: number; label: string }[] = [];
+  let dm;
+  while ((dm = dateRegex.exec(html)) !== null) {
+    dates.push({ idx: dm.index, label: dm[1].replace(/\s+/g, " ").trim() });
+  }
+
+  const linkRegex =
+    /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
+  let lm;
+  while ((lm = linkRegex.exec(html)) !== null) {
+    const oid = parseInt(lm[1]);
+    const name = lm[2].replace(/&nbsp;/g, " ").trim();
+    if (!name || seen.has(oid)) continue;
+    seen.add(oid);
+
+    // Find nearest preceding date label
+    let dateLabel: string | undefined;
+    for (let i = dates.length - 1; i >= 0; i--) {
+      if (dates[i].idx < lm.index) {
+        dateLabel = dates[i].label;
+        break;
       }
     }
+    out.push({ menuOid: oid, name, dateLabel });
   }
 
   return out;
@@ -720,6 +741,74 @@ async function processItemPanelWithCategoryPrefix(
   return items.length;
 }
 
+/** Process a hall that exposes a top-level menuPanel (dated meals).
+ * Strategy: create one station per unique meal name (e.g. "Lunch", "Dinner",
+ * or "Daily Menu" if there's only one), and inside each station store
+ * categories prefixed by the date so users can browse per-day. */
+async function processHallMenuList(
+  supabase: SupabaseAny,
+  session: SessionState,
+  hallId: string,
+  hallUnitOid: number,
+  menus: { name: string; menuOid: number; dateLabel?: string }[],
+): Promise<number> {
+  const byMeal = new Map<string, typeof menus>();
+  for (const m of menus) {
+    const key = m.name || "Daily Menu";
+    if (!byMeal.has(key)) byMeal.set(key, []);
+    byMeal.get(key)!.push(m);
+  }
+
+  let total = 0;
+  let mealIndex = 0;
+  for (const [mealName, mealMenus] of byMeal) {
+    mealIndex++;
+    const syntheticOid = hallUnitOid * 1000 + mealIndex;
+
+    const { data: stationData, error: stationError } = await supabase
+      .from("stations")
+      .upsert(
+        { dining_hall_id: hallId, name: mealName, unit_oid: syntheticOid },
+        { onConflict: "unit_oid" },
+      )
+      .select("id")
+      .single();
+
+    if (stationError || !stationData) {
+      console.error(`  Error creating meal station ${mealName}:`, stationError);
+      continue;
+    }
+
+    console.log(
+      `  Meal station "${mealName}" (${mealMenus.length} dates)`,
+    );
+
+    for (const menu of mealMenus) {
+      const dateLabel = menu.dateLabel || "Today";
+      console.log(`    ${dateLabel} (menuOid ${menu.menuOid})`);
+
+      const menuRes = await postWithRetry(session, "/Menu/SelectMenu", {
+        menuOid: menu.menuOid,
+      });
+      if (isStartupError(menuRes)) continue;
+
+      const itemHtml = extractPanelHtml(menuRes, "itemPanel");
+      if (!itemHtml || !itemHtml.includes("cbo_nn_itemHover")) {
+        console.log(`      no items returned (panel ${itemHtml?.length ?? 0})`);
+        continue;
+      }
+
+      total += await processItemPanelWithCategoryPrefix(
+        supabase,
+        session,
+        stationData.id,
+        itemHtml,
+        dateLabel,
+      );
+    }
+  }
+  return total;
+}
 
 /** POST with session recovery — re-inits session if Start-up Error is returned. */
 async function postWithRetry(
@@ -847,10 +936,29 @@ Deno.serve(async (req) => {
 
       const childUnitsHtml = extractPanelHtml(sidebarResponse, "childUnitsPanel");
       const itemPanelHtml = extractPanelHtml(sidebarResponse, "itemPanel");
+      const menuPanelHtml = extractPanelHtml(sidebarResponse, "menuPanel");
+
+      // Prefer dated menu drill-in when the hall exposes a menuPanel —
+      // this is how Woodworth, North Dining, Tom John, Bookmark return
+      // their Lunch / Dinner per date selection.
+      const hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
+      if (hallMenus.length > 0) {
+        console.log(
+          `  Hall ${hall.name} exposes ${hallMenus.length} dated menus — splitting into per-meal stations`,
+        );
+        totalItems += await processHallMenuList(
+          supabase,
+          session,
+          hallData.id,
+          hall.unitOid,
+          hallMenus,
+        );
+        continue;
+      }
 
       if (itemPanelHtml && itemPanelHtml.includes("cbo_nn_itemHover")) {
         console.log(
-          `  Hall ${hall.name} returned items directly (no stations)`,
+          `  Hall ${hall.name} returned items directly (no stations, no menu list)`,
         );
 
         const { data: stationData, error: stationError } = await supabase
