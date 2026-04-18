@@ -868,10 +868,29 @@ Deno.serve(async (req) => {
 
       const childUnitsHtml = extractPanelHtml(sidebarResponse, "childUnitsPanel");
       const itemPanelHtml = extractPanelHtml(sidebarResponse, "itemPanel");
+      const menuPanelHtml = extractPanelHtml(sidebarResponse, "menuPanel");
+
+      // Prefer dated menu drill-in when the hall exposes a menuPanel —
+      // this is how Woodworth, North Dining, Tom John, Bookmark return
+      // their Lunch / Dinner per date selection.
+      const hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
+      if (hallMenus.length > 0) {
+        console.log(
+          `  Hall ${hall.name} exposes ${hallMenus.length} dated menus — splitting into per-meal stations`,
+        );
+        totalItems += await processHallMenuList(
+          supabase,
+          session,
+          hallData.id,
+          hall.unitOid,
+          hallMenus,
+        );
+        continue;
+      }
 
       if (itemPanelHtml && itemPanelHtml.includes("cbo_nn_itemHover")) {
         console.log(
-          `  Hall ${hall.name} returned items directly (no stations)`,
+          `  Hall ${hall.name} returned items directly (no stations, no menu list)`,
         );
 
         const { data: stationData, error: stationError } = await supabase
