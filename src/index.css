@@ -8,40 +8,45 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* iOS-inspired light theme */
-    --background: 240 20% 98%;
-    --foreground: 240 10% 4%;
+    /* Ball State University — Light theme */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
 
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card-foreground: 0 0% 0%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
+    --popover-foreground: 0 0% 0%;
 
-    /* iOS system blue */
-    --primary: 211 100% 50%;
+    /* Cardinal Red #BA0C2F — dominant brand color */
+    --primary: 350 88% 39%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 10% 96%;
-    --secondary-foreground: 240 10% 10%;
+    --secondary: 210 13% 95%;
+    --secondary-foreground: 206 3% 35%;
 
-    --muted: 240 10% 96%;
-    --muted-foreground: 240 5% 45%;
+    --muted: 210 13% 95%;
+    --muted-foreground: 206 3% 35%;
 
-    --accent: 240 10% 94%;
-    --accent-foreground: 240 10% 10%;
+    --accent: 210 13% 92%;
+    --accent-foreground: 206 3% 35%;
 
-    /* iOS system red */
-    --destructive: 4 90% 58%;
+    /* Use Cardinal Red for destructive too — single brand red */
+    --destructive: 350 88% 39%;
     --destructive-foreground: 0 0% 100%;
 
-    /* iOS system green */
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    /* Supporting Green #BAD57E */
+    --success: 84 53% 67%;
+    --success-foreground: 0 0% 0%;
 
-    --border: 240 10% 90%;
-    --input: 240 10% 90%;
-    --ring: 211 100% 50%;
+    /* Supporting palette (used sparingly) */
+    --bsu-yellow: 47 97% 70%;
+    --bsu-blue: 196 100% 33%;
+    --bsu-light-blue: 196 60% 80%;
+
+    --border: 206 3% 88%;
+    --input: 206 3% 88%;
+    --ring: 350 88% 39%;
 
     --radius: 1rem;
 
@@ -63,37 +68,42 @@ All colors MUST be HSL.
   }
 
   .dark {
-    /* iOS-inspired dark theme */
+    /* Ball State University — Dark theme */
     --background: 0 0% 0%;
-    --foreground: 0 0% 98%;
+    --foreground: 0 0% 100%;
 
-    --card: 240 6% 10%;
-    --card-foreground: 0 0% 98%;
+    --card: 206 3% 12%;
+    --card-foreground: 0 0% 100%;
 
-    --popover: 240 6% 12%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 206 3% 14%;
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 211 100% 55%;
+    /* Cardinal Red, slightly brightened for dark bg */
+    --primary: 350 80% 50%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 206 3% 20%;
+    --secondary-foreground: 0 0% 95%;
 
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 206 3% 20%;
+    --muted-foreground: 206 5% 70%;
 
-    --accent: 240 4% 18%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 206 3% 24%;
+    --accent-foreground: 0 0% 95%;
 
-    --destructive: 4 90% 58%;
+    --destructive: 350 80% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 100%;
+    --success: 84 53% 60%;
+    --success-foreground: 0 0% 0%;
 
-    --border: 240 4% 18%;
-    --input: 240 4% 18%;
-    --ring: 211 100% 55%;
+    --bsu-yellow: 47 97% 65%;
+    --bsu-blue: 196 80% 45%;
+    --bsu-light-blue: 196 50% 70%;
+
+    --border: 206 3% 22%;
+    --input: 206 3% 22%;
+    --ring: 350 80% 50%;
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
