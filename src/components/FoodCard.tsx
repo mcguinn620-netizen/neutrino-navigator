@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Leaf, ChevronDown } from "lucide-react";
 import NutritionPanel from "@/components/NutritionPanel";
@@ -15,7 +16,7 @@ interface FoodCardProps {
   onToggle: () => void;
 }
 
-const FoodCard = ({
+const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
   name,
   servingSize,
   allergens,
@@ -23,12 +24,13 @@ const FoodCard = ({
   nutrients,
   expanded,
   onToggle,
-}: FoodCardProps) => {
+}, ref) => {
   const allergenList = Array.isArray(allergens) ? (allergens as string[]) : [];
   const dietaryList = Array.isArray(dietaryFlags) ? (dietaryFlags as string[]) : [];
 
   return (
     <div
+      ref={ref}
       className={cn(
         "rounded-2xl bg-card border border-border/60 shadow-sm transition-all duration-200",
         "active:scale-[0.98]",
@@ -129,6 +131,7 @@ const FoodCard = ({
       )}
     </div>
   );
-};
+});
+FoodCard.displayName = "FoodCard";
 
 export default FoodCard;
