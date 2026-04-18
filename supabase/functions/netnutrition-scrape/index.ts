@@ -1345,7 +1345,7 @@ Deno.serve(async (req) => {
     const discoveredHalls = await discoverDiningHalls(discoverySession);
 
     console.log(
-      `Dispatching ${discoveredHalls.length} hall scrapes:`,
+      `Dispatching ${discoveredHalls.length} hall scrapes (fire-and-forget):`,
       discoveredHalls.map((h) => `${h.name}(${h.unitOid})`).join(", "),
     );
 
@@ -1355,48 +1355,24 @@ Deno.serve(async (req) => {
       items_count: 0,
     });
 
-    const hallResults = await invokeHallScrapesInBatches(
-      supabaseUrl,
-      anonKey,
-      discoveredHalls,
-      wipe,
-    );
-
-    const totalItems = hallResults.reduce((sum, result) => sum + result.itemsCount, 0);
-    const failures = hallResults.filter((result) => !result.success);
-
-    await supabase.from("scrape_logs").insert({
-      status: failures.length > 0 ? "partial" : "success",
-      message: failures.length > 0
-        ? `Scraped ${totalItems} items with ${failures.length} hall failures`
-        : `Scraped ${totalItems} items from ${discoveredHalls.length} halls`,
-      items_count: totalItems,
-    });
-
-    if (failures.length > 0) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: `Refresh completed with ${failures.length} hall failures`,
-          itemsCount: totalItems,
-          failures,
-        }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+    // Fire-and-forget every hall. Each child invocation is its own edge function call
+    // with its own wall-clock budget. They self-log to scrape_logs.
+    // Stagger dispatch slightly so we don't slam NetNutrition all at once.
+    for (let i = 0; i < discoveredHalls.length; i++) {
+      dispatchHallScrape(supabaseUrl, anonKey, discoveredHalls[i], wipe);
+      if (i < discoveredHalls.length - 1) {
+        await new Promise((r) => setTimeout(r, 250));
+      }
     }
-
-    console.log(`\nRefresh complete: ${totalItems} items total`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Scraped ${totalItems} items from ${discoveredHalls.length} dining halls`,
-        itemsCount: totalItems,
+        message: `Dispatched ${discoveredHalls.length} hall scrapes. They will complete in the background — check back in 1–3 minutes.`,
+        hallsDispatched: discoveredHalls.length,
+        halls: discoveredHalls.map((h) => h.name),
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("Scrape error:", error);
