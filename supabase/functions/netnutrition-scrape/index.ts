@@ -741,6 +741,7 @@ Deno.serve(async (req) => {
         if (!stationError && stationData) {
           totalItems += await processItemPanel(
             supabase,
+            session,
             stationData.id,
             itemPanelHtml,
           );
@@ -791,6 +792,7 @@ Deno.serve(async (req) => {
             if (!stationError && stationData) {
               totalItems += await processItemPanel(
                 supabase,
+                session,
                 stationData.id,
                 fallbackItemHtml,
               );
@@ -832,6 +834,7 @@ Deno.serve(async (req) => {
               if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
                 totalItems += await processItemPanel(
                   supabase,
+                  session,
                   stationData.id,
                   nestedItemHtml,
                 );
@@ -885,6 +888,7 @@ Deno.serve(async (req) => {
         if (stationItemHtml && stationItemHtml.includes("cbo_nn_itemHover")) {
           totalItems += await processItemPanel(
             supabase,
+            session,
             stationData.id,
             stationItemHtml,
           );
@@ -917,11 +921,30 @@ Deno.serve(async (req) => {
             if (nestedItemHtml && nestedItemHtml.includes("cbo_nn_itemHover")) {
               totalItems += await processItemPanel(
                 supabase,
+                session,
                 stationData.id,
                 nestedItemHtml,
               );
             }
           }
+          continue;
+        }
+
+        // Daily Menu fallback: station response had no items and no child units —
+        // it likely lists dated menus that need to be selected to reveal items.
+        console.log(
+          `    Station ${station.name} has no items/children — trying daily menu drill-in`,
+        );
+        const dailyCount = await processDailyMenuStation(
+          supabase,
+          session,
+          stationData.id,
+          childResponse,
+        );
+        if (dailyCount > 0) {
+          totalItems += dailyCount;
+        } else {
+          console.log(`    No daily menu items recovered for ${station.name}`);
         }
       }
     }
