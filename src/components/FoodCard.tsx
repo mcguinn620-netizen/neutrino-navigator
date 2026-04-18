@@ -83,12 +83,12 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
               </span>
             )}
             {protein && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-accent-blue/15 text-accent-blue border border-accent-blue/25">
+              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
                 P {protein}
               </span>
             )}
             {carbs && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-accent-yellow/25 text-foreground border border-accent-yellow/40">
+              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
                 C {carbs}
               </span>
             )}
