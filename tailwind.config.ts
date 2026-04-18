@@ -47,6 +47,10 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -86,12 +90,6 @@ export default {
         "accordion-up": "accordion-up 0.25s cubic-bezier(0.32, 0.72, 0, 1)",
         "fade-in": "fade-in 0.2s ease-out",
         "scale-in": "scale-in 0.2s cubic-bezier(0.32, 0.72, 0, 1)",
-      },
-      colors: {
-        success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
-        },
       },
     },
   },
