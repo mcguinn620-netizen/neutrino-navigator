@@ -1,0 +1,3 @@
+DELETE FROM food_items WHERE station_id IN (SELECT s.id FROM stations s JOIN dining_halls dh ON s.dining_hall_id=dh.id WHERE dh.name IN ('Woodworth Commons','North Dining','Bookmark Cafe','Tom John Food Shop'));
+DELETE FROM menu_categories WHERE station_id IN (SELECT s.id FROM stations s JOIN dining_halls dh ON s.dining_hall_id=dh.id WHERE dh.name IN ('Woodworth Commons','North Dining','Bookmark Cafe','Tom John Food Shop'));
+DELETE FROM stations WHERE dining_hall_id IN (SELECT id FROM dining_halls WHERE name IN ('Woodworth Commons','North Dining','Bookmark Cafe','Tom John Food Shop'));

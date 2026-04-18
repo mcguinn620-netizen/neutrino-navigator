@@ -938,10 +938,45 @@ Deno.serve(async (req) => {
       const itemPanelHtml = extractPanelHtml(sidebarResponse, "itemPanel");
       const menuPanelHtml = extractPanelHtml(sidebarResponse, "menuPanel");
 
+      // Debug: dump panel ids+sizes so we can see what NetNutrition returned
+      try {
+        const parsed = JSON.parse(sidebarResponse);
+        if (Array.isArray(parsed.panels)) {
+          const summary = parsed.panels
+            .map((p: { id: string; html?: string }) => `${p.id}=${p.html?.length ?? 0}`)
+            .join(", ");
+          console.log(`  [panels] ${hall.name}: ${summary}`);
+        }
+      } catch {
+        console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
+      }
+
       // Prefer dated menu drill-in when the hall exposes a menuPanel —
       // this is how Woodworth, North Dining, Tom John, Bookmark return
       // their Lunch / Dinner per date selection.
-      const hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
+      let hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
+
+      // Fallback: some halls put the dated menu links inside childUnitsPanel
+      // or itemPanel. Scan those before falling back to flat-hall behavior.
+      if (hallMenus.length === 0 && childUnitsHtml) {
+        const fromChild = parseMenusWithDates(childUnitsHtml);
+        if (fromChild.length > 0) {
+          console.log(
+            `  [menus] ${hall.name}: found ${fromChild.length} dated menus in childUnitsPanel`,
+          );
+          hallMenus = fromChild;
+        }
+      }
+      if (hallMenus.length === 0 && itemPanelHtml) {
+        const fromItem = parseMenusWithDates(itemPanelHtml);
+        if (fromItem.length > 0) {
+          console.log(
+            `  [menus] ${hall.name}: found ${fromItem.length} dated menus in itemPanel`,
+          );
+          hallMenus = fromItem;
+        }
+      }
+
       if (hallMenus.length > 0) {
         console.log(
           `  Hall ${hall.name} exposes ${hallMenus.length} dated menus — splitting into per-meal stations`,

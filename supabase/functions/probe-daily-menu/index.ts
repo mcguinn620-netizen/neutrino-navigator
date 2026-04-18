@@ -89,10 +89,12 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     const hallOid = parseInt(url.searchParams.get("hall") ?? "16");
-    const stationOid = parseInt(url.searchParams.get("station") ?? "17");
+    const stationOidParam = url.searchParams.get("station");
+    const stationOid = stationOidParam ? parseInt(stationOidParam) : null;
 
     let cookies: string[] = [];
     let lastResp = "";
+    let hallResp = "";
     // Up to 5 attempts to get past start-up errors
     for (let attempt = 0; attempt < 5; attempt++) {
       cookies = await init();
@@ -101,6 +103,11 @@ Deno.serve(async (req) => {
       if (r1.text.includes("NetNutrition Start-up Error")) {
         lastResp = "hall startup err attempt " + attempt;
         continue;
+      }
+      hallResp = r1.text;
+      if (stationOid === null) {
+        lastResp = r1.text;
+        break;
       }
       const r2 = await post(cookies, "/Unit/SelectUnitFromChildUnitsList", {
         unitOid: stationOid,
