@@ -131,6 +131,7 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
       )}
     </div>
   );
-};
+});
+FoodCard.displayName = "FoodCard";
 
 export default FoodCard;
