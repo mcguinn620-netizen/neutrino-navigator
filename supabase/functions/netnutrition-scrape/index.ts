@@ -644,6 +644,26 @@ function parseMenusWithDates(
 ): { name: string; menuOid: number; dateLabel?: string }[] {
   const out: { name: string; menuOid: number; dateLabel?: string }[] = [];
   const seen = new Set<number>();
+  const cleanText = (value: string) => value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+  const datePatterns = [
+    /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/i,
+    /([A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/i,
+    /(Today|Tomorrow)/i,
+  ];
+  const extractDateLabel = (value: string): string | undefined => {
+    const text = cleanText(value);
+    for (const pattern of datePatterns) {
+      const match = text.match(pattern);
+      if (match) return match[1].replace(/\s+/g, " ").trim();
+    }
+    return undefined;
+  };
 
   // Pass 1 — table-row style (preferred when present)
   const rowRegex =
@@ -651,19 +671,14 @@ function parseMenusWithDates(
   let rowMatch;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const row = rowMatch[1];
-    const dateMatch = row.match(
-      /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/i,
-    );
-    const dateLabel = dateMatch
-      ? dateMatch[1].replace(/\s+/g, " ").trim()
-      : undefined;
+    const dateLabel = extractDateLabel(row);
 
     const linkRegex =
       /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
     let linkMatch;
     while ((linkMatch = linkRegex.exec(row)) !== null) {
       const menuOid = parseInt(linkMatch[1]);
-      const name = linkMatch[2].replace(/&nbsp;/g, " ").trim();
+      const name = cleanText(linkMatch[2]);
       if (name && !seen.has(menuOid)) {
         seen.add(menuOid);
         out.push({ menuOid, name, dateLabel });
@@ -675,20 +690,32 @@ function parseMenusWithDates(
 
   // Pass 2 — sequential scan: pair each selectMenu(N) link with the nearest
   // preceding date label found in the HTML. Works for div/anchor layouts.
-  const dateRegex =
-    /((?:Sun|Mon|Tue|Wed|Thu|Fri|Sat)[a-z]*,?\s*[A-Z][a-z]+\s+\d{1,2},?\s*\d{4})/gi;
+  const dateContainerRegex =
+    /<(?:tr|div|li|span|td|a)[^>]*(?:class|id)=['"][^'"]*(?:date|day|menuDate|cbo_nn_menu(?:Primary|Alternate)Row)[^'"]*['"][^>]*>([\s\S]*?)<\/(?:tr|div|li|span|td|a)>/gi;
   const dates: { idx: number; label: string }[] = [];
   let dm;
-  while ((dm = dateRegex.exec(html)) !== null) {
-    dates.push({ idx: dm.index, label: dm[1].replace(/\s+/g, " ").trim() });
+  while ((dm = dateContainerRegex.exec(html)) !== null) {
+    const label = extractDateLabel(dm[1]);
+    if (label) dates.push({ idx: dm.index, label });
   }
+
+  for (const pattern of datePatterns) {
+    const globalPattern = new RegExp(pattern.source, "gi");
+    let textMatch;
+    while ((textMatch = globalPattern.exec(html)) !== null) {
+      const label = cleanText(textMatch[1]);
+      if (label) dates.push({ idx: textMatch.index, label });
+    }
+  }
+
+  dates.sort((a, b) => a.idx - b.idx);
 
   const linkRegex =
     /(?:menuListSelectMenu|selectMenu|SelectMenu)\((\d+)\)[^>]*>\s*([^<]+?)\s*</gi;
   let lm;
   while ((lm = linkRegex.exec(html)) !== null) {
     const oid = parseInt(lm[1]);
-    const name = lm[2].replace(/&nbsp;/g, " ").trim();
+    const name = cleanText(lm[2]);
     if (!name || seen.has(oid)) continue;
     seen.add(oid);
 
