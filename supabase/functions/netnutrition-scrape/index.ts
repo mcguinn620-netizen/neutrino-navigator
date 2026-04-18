@@ -1280,13 +1280,14 @@ async function scrapeSingleHall(
   return { hallName: hall.name, itemsCount: totalItems };
 }
 
-async function invokeHallScrape(
+/** Fire-and-forget child invocation. Does NOT await response (avoids parent timeout). */
+function dispatchHallScrape(
   supabaseUrl: string,
   anonKey: string,
   hall: { name: string; unitOid: number },
   wipe: boolean,
-): Promise<InvokedHallResult> {
-  const res = await fetch(`${supabaseUrl}/functions/v1/netnutrition-scrape`, {
+): void {
+  fetch(`${supabaseUrl}/functions/v1/netnutrition-scrape`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1294,68 +1295,9 @@ async function invokeHallScrape(
       "Authorization": `Bearer ${anonKey}`,
     },
     body: JSON.stringify({ hallUnitOid: hall.unitOid, wipe }),
+  }).catch((err) => {
+    console.error(`Failed to dispatch ${hall.name}:`, err);
   });
-
-  const text = await res.text();
-  let payload: Record<string, unknown> = {};
-  try {
-    payload = text ? JSON.parse(text) as Record<string, unknown> : {};
-  } catch {
-    payload = { error: text };
-  }
-
-  if (!res.ok || payload.success === false) {
-    return {
-      success: false,
-      hallName: hall.name,
-      itemsCount: 0,
-      error: typeof payload.error === "string"
-        ? payload.error
-        : typeof payload.message === "string"
-          ? payload.message
-          : `Hall scrape failed with status ${res.status}`,
-    };
-  }
-
-  return {
-    success: true,
-    hallName: typeof payload.hallName === "string" ? payload.hallName : hall.name,
-    itemsCount: typeof payload.itemsCount === "number" ? payload.itemsCount : 0,
-  };
-}
-
-async function invokeHallScrapesInBatches(
-  supabaseUrl: string,
-  anonKey: string,
-  halls: { name: string; unitOid: number }[],
-  wipe: boolean,
-  batchSize = 4,
-): Promise<InvokedHallResult[]> {
-  const results: InvokedHallResult[] = [];
-
-  for (let i = 0; i < halls.length; i += batchSize) {
-    const batch = halls.slice(i, i + batchSize);
-    const settled = await Promise.allSettled(
-      batch.map((hall) => invokeHallScrape(supabaseUrl, anonKey, hall, wipe)),
-    );
-
-    settled.forEach((result, index) => {
-      const hall = batch[index];
-      if (result.status === "fulfilled") {
-        results.push(result.value);
-        return;
-      }
-
-      results.push({
-        success: false,
-        hallName: hall.name,
-        itemsCount: 0,
-        error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-      });
-    });
-  }
-
-  return results;
 }
 
 Deno.serve(async (req) => {
