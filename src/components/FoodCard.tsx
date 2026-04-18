@@ -28,6 +28,22 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
   const allergenList = Array.isArray(allergens) ? (allergens as string[]) : [];
   const dietaryList = Array.isArray(dietaryFlags) ? (dietaryFlags as string[]) : [];
 
+  const nutrientObj =
+    nutrients && typeof nutrients === "object" && !Array.isArray(nutrients)
+      ? (nutrients as Record<string, string | number>)
+      : null;
+  const getNutrient = (key: string): string | null => {
+    if (!nutrientObj) return null;
+    const v = nutrientObj[key];
+    if (v === undefined || v === null || v === "") return null;
+    return String(v);
+  };
+  const calories = getNutrient("Calories");
+  const protein = getNutrient("Protein");
+  const carbs = getNutrient("Total Carbohydrate");
+  const fat = getNutrient("Total Fat");
+  const hasMacros = calories || protein || carbs || fat;
+
   return (
     <div
       ref={ref}
