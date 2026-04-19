@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RefreshCw, Search, Utensils, ChevronRight, ChevronLeft, X, Building2, Store, FolderOpen } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import FoodCard from "@/components/FoodCard";
 import FilterSheet from "@/components/FilterSheet";
+import SettingsSheet from "@/components/SettingsSheet";
 import { cn } from "@/lib/utils";
 import { useSwipeBack } from "@/hooks/use-swipe-back";
 
@@ -225,37 +225,55 @@ const Index = () => {
   const accentColors = ["bg-primary/10 text-primary", "bg-bsu-blue/10 text-bsu-blue", "bg-success/20 text-foreground", "bg-bsu-yellow/20 text-foreground"];
 
   return (
-    <div className="min-h-screen bg-background pb-24">
-      {/* Sticky top header */}
-      <header className="sticky top-0 z-40 bg-background/85 backdrop-blur-xl border-b border-border/60 pt-safe">
+    <div className="min-h-screen bg-background">
+      {/* Sticky top header — Cardinal Red */}
+      <header className="sticky top-0 z-40 bg-primary text-primary-foreground pt-safe shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {view.level !== "halls" ? (
                 <button
                   onClick={goBack}
-                  className="h-9 w-9 -ml-1 rounded-full flex items-center justify-center active:bg-muted shrink-0"
+                  className="h-9 w-9 -ml-1 rounded-full flex items-center justify-center active:bg-white/20 shrink-0"
                   aria-label="Back"
                 >
-                  <ChevronLeft className="h-5 w-5 text-primary" />
+                  <ChevronLeft className="h-5 w-5" />
                 </button>
               ) : (
-                <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
-                  <Utensils className="h-5 w-5 text-primary-foreground" />
+                <div className="h-9 w-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+                  <Utensils className="h-5 w-5" />
                 </div>
               )}
               <div className="min-w-0">
-                <h1 className="text-base font-bold text-foreground leading-tight truncate">
+                <h1 className="text-base font-bold leading-tight truncate">
                   {headerTitle}
                 </h1>
                 {lastScrape && view.level === "halls" && (
-                  <p className="text-[10px] text-muted-foreground leading-tight">
+                  <p className="text-[10px] text-primary-foreground/75 leading-tight">
                     Updated {new Date(lastScrape.scraped_at).toLocaleDateString()}
                   </p>
                 )}
               </div>
             </div>
-            <ThemeToggle />
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => setSearchOpen((v) => !v)}
+                className={cn(
+                  "h-9 w-9 rounded-full flex items-center justify-center active:bg-white/20",
+                  searchOpen && "bg-white/15",
+                )}
+                aria-label="Search"
+              >
+                <Search className="h-5 w-5" />
+              </button>
+              <FilterSheet
+                selectedAllergens={selectedAllergens}
+                selectedDietary={selectedDietary}
+                onAllergenChange={setSelectedAllergens}
+                onDietaryChange={setSelectedDietary}
+              />
+              <SettingsSheet />
+            </div>
           </div>
 
           {/* Inline search */}
@@ -267,7 +285,7 @@ const Index = () => {
                 placeholder="Search food items..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-9 h-10 rounded-xl bg-secondary border-0"
+                className="pl-9 pr-9 h-10 rounded-xl bg-white text-foreground border-0 placeholder:text-muted-foreground"
               />
               {searchQuery && (
                 <button
@@ -275,15 +293,15 @@ const Index = () => {
                   className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full bg-muted-foreground/20 flex items-center justify-center"
                   aria-label="Clear search"
                 >
-                  <X className="h-3 w-3" />
+                  <X className="h-3 w-3 text-foreground" />
                 </button>
               )}
             </div>
           )}
 
           {filterCount > 0 && (
-            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <div className="mt-2 flex items-center gap-2 text-[11px] text-primary-foreground/85">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary-foreground" />
               {filterCount} filter{filterCount > 1 ? "s" : ""} active
             </div>
           )}
@@ -423,11 +441,14 @@ const Index = () => {
               {itemsForCategory.map((item) => (
                 <FoodCard
                   key={item.id}
+                  foodId={item.id}
                   name={item.name}
                   servingSize={item.serving_size}
                   allergens={item.allergens}
                   dietaryFlags={item.dietary_flags}
                   nutrients={item.nutrients}
+                  hallName={currentHall?.name ?? ""}
+                  stationName={currentStation?.name ?? ""}
                   expanded={expandedItem === item.id}
                   onToggle={() => setExpandedItem(expandedItem === item.id ? null : item.id)}
                 />
@@ -436,42 +457,6 @@ const Index = () => {
           )
         )}
       </main>
-
-      {/* Bottom action bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border/60 pb-safe">
-        <div className="max-w-2xl mx-auto px-3 py-1.5 flex items-center justify-around">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSearchOpen((v) => !v)}
-            className={cn(
-              "flex flex-col h-auto py-1.5 px-3 min-w-[44px] gap-0.5",
-              searchOpen && "text-primary",
-            )}
-          >
-            <Search className="h-5 w-5" />
-            <span className="text-[10px]">Search</span>
-          </Button>
-
-          <FilterSheet
-            selectedAllergens={selectedAllergens}
-            selectedDietary={selectedDietary}
-            onAllergenChange={setSelectedAllergens}
-            onDietaryChange={setSelectedDietary}
-          />
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => scrapeMutation.mutate()}
-            disabled={scrapeMutation.isPending}
-            className="flex flex-col h-auto py-1.5 px-3 min-w-[44px] gap-0.5"
-          >
-            <RefreshCw className={cn("h-5 w-5", scrapeMutation.isPending && "animate-spin")} />
-            <span className="text-[10px]">Refresh</span>
-          </Button>
-        </div>
-      </nav>
     </div>
   );
 };
