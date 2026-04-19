@@ -16,7 +16,7 @@ interface FoodCardProps {
   onToggle: () => void;
 }
 
-const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
+const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
   name,
   servingSize,
   allergens,
