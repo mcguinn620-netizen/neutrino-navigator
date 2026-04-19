@@ -49,7 +49,7 @@ const Index = () => {
   const { data: halls = [] } = useQuery({
     queryKey: ["dining-halls"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("dining_halls").select("*").order("name");
+      const { data, error } = await supabase.from("dining_halls").select("*").order("unit_oid");
       if (error) throw error;
       return data as DiningHall[];
     },
@@ -58,7 +58,7 @@ const Index = () => {
   const { data: stations = [] } = useQuery({
     queryKey: ["stations", "all"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("stations").select("*").order("name");
+      const { data, error } = await supabase.from("stations").select("*").order("unit_oid");
       if (error) throw error;
       return data as Station[];
     },
