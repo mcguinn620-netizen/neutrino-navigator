@@ -12,14 +12,17 @@ import { cn } from "@/lib/utils";
 
 const ALLERGENS = [
   "Gluten",
-  "Dairy",
+  "Milk",
   "Soy",
   "Tree Nuts",
   "Peanuts",
-  "Egg",
+  "Eggs",
   "Shellfish",
   "Fish",
   "Pork",
+  "Coconut",
+  "Sesame seeds",
+  "Cross contact may occur-manufacturing/frying",
 ];
 const DIETARY = ["Vegan", "Vegetarian"];
 
