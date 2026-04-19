@@ -8,12 +8,13 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Ball State University — Light theme */
-    --background: 0 0% 100%;
-    --foreground: 0 0% 0%;
+    /* Ball State University — Light theme.
+       App background uses a soft tint so white cards have natural separation. */
+    --background: 210 20% 97%;
+    --foreground: 0 0% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 0%;
+    --card-foreground: 0 0% 8%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 0%;
@@ -44,9 +45,12 @@ All colors MUST be HSL.
     --bsu-blue: 196 100% 33%;
     --bsu-light-blue: 196 60% 80%;
 
-    --border: 206 3% 88%;
-    --input: 206 3% 88%;
+    --border: 210 12% 88%;
+    --input: 210 12% 88%;
     --ring: 350 88% 39%;
+
+    /* Soft elevated card shadow for light theme */
+    --shadow-card: 0 1px 2px 0 hsl(210 30% 30% / 0.04), 0 4px 16px -8px hsl(210 30% 30% / 0.08);
 
     --radius: 1rem;
 
@@ -133,4 +137,8 @@ All colors MUST be HSL.
   /* Safe area helpers for iOS */
   .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
   .pt-safe { padding-top: max(env(safe-area-inset-top), 0.5rem); }
+  .pb-safe-0 { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Subtle elevation for cards in light mode (no-op in dark) */
+  .shadow-card { box-shadow: var(--shadow-card, 0 1px 2px hsl(0 0% 0% / 0.04)); }
 }
