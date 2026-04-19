@@ -158,7 +158,10 @@ const KNOWN_HALLS = [
   { name: "Noyer", unitOid: 14 },
   { name: "Student Center Tally Food Court", unitOid: 16 },
   { name: "North Dining", unitOid: 21 },
-  { name: "Woodworth Commons", unitOid: 27 },
+  // Woodworth Commons sits behind a units-list (unit oid 38). Its meal-period
+  // child units (Lunch / Dinner) are exposed via SelectUnitFromUnitsList and
+  // typically begin around unit oid 40. See scrapeSingleHall's Woodworth probe.
+  { name: "Woodworth Commons", unitOid: 38 },
   { name: "Bookmark Cafe", unitOid: 33 },
   { name: "Tom John Food Shop", unitOid: 35 },
 ];
@@ -195,6 +198,32 @@ function parseStations(html: string): { name: string; unitOid: number }[] {
   }
 
   return stations;
+}
+
+/**
+ * Parse units-list links — used by halls like Woodworth Commons that expose
+ * meal periods (Lunch / Dinner) via a units-list panel rather than the usual
+ * childUnits panel. Triggered by `unitsListSelectUnit(N)` JS handlers.
+ */
+function parseUnitsList(html: string): { name: string; unitOid: number }[] {
+  const units: { name: string; unitOid: number }[] = [];
+  const seen = new Set<number>();
+  const regexes = [
+    /unitsListSelectUnit\((\d+)\)[^>]*>([^<]+)/gi,
+    /selectUnitFromUnitsList\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const unitOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(unitOid)) {
+        seen.add(unitOid);
+        units.push({ unitOid, name });
+      }
+    }
+  }
+  return units;
 }
 
 /** Parse menu links (Daily Menu style) from a panel. */
@@ -1041,33 +1070,116 @@ async function scrapeSingleHall(
         .map((p: { id: string; html?: string }) => `${p.id}=${p.html?.length ?? 0}`)
         .join(", ");
       console.log(`  [panels] ${hall.name}: ${summary}`);
+    }
+  } catch {
+    console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
+  }
 
-      // DEBUG: dump full HTML for Woodworth so we can see Lunch/Dinner markup
-      if (hall.name.toLowerCase().includes("woodworth")) {
-        for (const p of parsed.panels as { id: string; html?: string }[]) {
-          const h = (p.html ?? "").replace(/\s+/g, " ").trim();
-          if (!h) continue;
-          const chunks = Math.ceil(h.length / 1500);
-          for (let i = 0; i < chunks; i++) {
-            console.log(
-              `  [WOODWORTH-DEBUG] panel=${p.id} part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
+  // ── Woodworth-style probe: meal periods exposed via a units-list panel ──
+  // Some halls (e.g. Woodworth Commons, hall unit_oid 38) don't expose stations
+  // through childUnitsPanel; instead the sidebar response contains a units-list
+  // with `unitsListSelectUnit(N)` entries for each meal period (Lunch / Dinner /
+  // Brunch). When we detect those, treat each child unit as a separate station
+  // and pull its items via /Unit/SelectUnitFromUnitsList.
+  const unitsListEntries = [
+    ...parseUnitsList(childUnitsHtml),
+    ...parseUnitsList(itemPanelHtml),
+    ...parseUnitsList(menuPanelHtml),
+    ...parseUnitsList(sidebarResponse),
+  ];
+  const dedupedUnitsList: { name: string; unitOid: number }[] = [];
+  const seenUnitOids = new Set<number>();
+  for (const u of unitsListEntries) {
+    if (u.unitOid === hall.unitOid) continue; // skip self-link
+    if (seenUnitOids.has(u.unitOid)) continue;
+    seenUnitOids.add(u.unitOid);
+    dedupedUnitsList.push(u);
+  }
+
+  if (dedupedUnitsList.length > 0) {
+    console.log(
+      `  Hall ${hall.name} exposes ${dedupedUnitsList.length} units-list entries — treating each as a meal-period station`,
+    );
+    for (const child of dedupedUnitsList) {
+      console.log(`    Units-list child: ${child.name} (unitOid: ${child.unitOid})`);
+
+      const { data: stationData, error: stationError } = await supabase
+        .from("stations")
+        .upsert(
+          {
+            dining_hall_id: hallData.id,
+            name: child.name,
+            unit_oid: child.unitOid,
+          },
+          { onConflict: "unit_oid" },
+        )
+        .select("id")
+        .single();
+
+      if (stationError || !stationData) {
+        console.error(`    Failed to upsert station ${child.name}:`, stationError);
+        continue;
+      }
+
+      const childResp = await postWithRetry(
+        session,
+        "/Unit/SelectUnitFromUnitsList",
+        { unitOid: child.unitOid },
+      );
+      if (isStartupError(childResp)) {
+        console.log(`    Skipping ${child.name}: Start-up Error`);
+        continue;
+      }
+
+      const childItemHtml = extractPanelHtml(childResp, "itemPanel");
+      const childMenuHtml = extractPanelHtml(childResp, "menuPanel");
+      const childChildUnitsHtml = extractPanelHtml(childResp, "childUnitsPanel");
+
+      // Direct items
+      if (childItemHtml && childItemHtml.includes("cbo_nn_itemHover")) {
+        totalItems += await processItemPanel(
+          supabase,
+          session,
+          stationData.id,
+          childItemHtml,
+        );
+        continue;
+      }
+
+      // Dated menu list inside the meal period
+      const childMenus = parseMenus(
+        [childMenuHtml, childChildUnitsHtml, childItemHtml]
+          .filter(Boolean)
+          .join("\n"),
+      );
+      if (childMenus.length > 0) {
+        // Pick the first menu (today's) and load it
+        const firstMenu = childMenus[0];
+        console.log(
+          `    ${child.name}: loading menu "${firstMenu.name}" (oid ${firstMenu.menuOid})`,
+        );
+        const menuResp = await postWithRetry(
+          session,
+          "/Menu/SelectMenu",
+          { menuOid: firstMenu.menuOid },
+        );
+        if (!isStartupError(menuResp)) {
+          const menuItemHtml = extractPanelHtml(menuResp, "itemPanel");
+          if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
+            totalItems += await processItemPanel(
+              supabase,
+              session,
+              stationData.id,
+              menuItemHtml,
             );
           }
         }
       }
     }
-  } catch {
-    console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
-    if (hall.name.toLowerCase().includes("woodworth")) {
-      const h = sidebarResponse.replace(/\s+/g, " ").trim();
-      const chunks = Math.ceil(h.length / 1500);
-      for (let i = 0; i < chunks; i++) {
-        console.log(
-          `  [WOODWORTH-RAW-SIDEBAR] part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
-        );
-      }
-    }
+
+    return { hallName: hall.name, itemsCount: totalItems };
   }
+
 
   let hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
 
@@ -1153,26 +1265,7 @@ async function scrapeSingleHall(
       { unitOid: hall.unitOid },
     );
 
-    // DEBUG: dump childFallback panel HTML for Woodworth
-    if (hall.name.toLowerCase().includes("woodworth")) {
-      try {
-        const parsed = JSON.parse(childFallback);
-        if (Array.isArray(parsed.panels)) {
-          for (const p of parsed.panels as { id: string; html?: string }[]) {
-            const h = (p.html ?? "").replace(/\s+/g, " ").trim();
-            if (!h) continue;
-            const chunks = Math.ceil(h.length / 1500);
-            for (let i = 0; i < chunks; i++) {
-              console.log(
-                `  [WOODWORTH-FALLBACK] panel=${p.id} part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
-              );
-            }
-          }
-        }
-      } catch {
-        console.log(`  [WOODWORTH-FALLBACK] non-JSON: ${childFallback.substring(0, 2000)}`);
-      }
-    }
+
 
     if (!isStartupError(childFallback)) {
       const fallbackItemHtml = extractPanelHtml(childFallback, "itemPanel");
