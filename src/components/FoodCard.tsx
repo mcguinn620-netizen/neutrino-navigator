@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Leaf, ChevronDown } from "lucide-react";
-import NutritionPanel from "@/components/NutritionPanel";
+import { AlertTriangle, Leaf } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
@@ -16,7 +16,7 @@ interface FoodCardProps {
   onToggle: () => void;
 }
 
-const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
+const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
   name,
   servingSize,
   allergens,
@@ -32,12 +32,28 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
     nutrients && typeof nutrients === "object" && !Array.isArray(nutrients)
       ? (nutrients as Record<string, string | number>)
       : null;
+
   const getNutrient = (key: string): string | null => {
     if (!nutrientObj) return null;
     const v = nutrientObj[key];
     if (v === undefined || v === null || v === "") return null;
     return String(v);
   };
+
+  // Pull ingredients out (case-insensitive) so it can render full-width at the bottom
+  let ingredients: string | null = null;
+  const nutrientEntries: [string, string][] = [];
+  if (nutrientObj) {
+    for (const [k, v] of Object.entries(nutrientObj)) {
+      if (v === undefined || v === null || v === "") continue;
+      if (k.toLowerCase() === "ingredients") {
+        ingredients = String(v);
+      } else {
+        nutrientEntries.push([k, String(v)]);
+      }
+    }
+  }
+
   const calories = getNutrient("Calories");
   const protein = getNutrient("Protein");
   const carbs = getNutrient("Total Carbohydrate");
@@ -45,55 +61,44 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
   const hasMacros = calories || protein || carbs || fat;
 
   return (
-    <div
-      ref={ref}
-      className={cn(
-        "rounded-2xl bg-card border border-border/60 shadow-sm transition-all duration-200",
-        "active:scale-[0.98]",
-        expanded && "shadow-md ring-1 ring-primary/20",
-      )}
-    >
+    <>
       <button
+        ref={ref}
         type="button"
         onClick={onToggle}
-        className="w-full text-left p-3 min-h-[44px] flex flex-col gap-1.5"
         aria-expanded={expanded}
+        className={cn(
+          "text-left w-full rounded-2xl bg-card border border-border/60 shadow-sm p-3 min-h-[140px]",
+          "flex flex-col gap-1.5 active:scale-[0.97] transition-transform",
+        )}
       >
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
-            {name}
-          </h4>
-          <ChevronDown
-            className={cn(
-              "h-4 w-4 text-muted-foreground shrink-0 mt-0.5 transition-transform duration-200",
-              expanded && "rotate-180",
-            )}
-          />
-        </div>
+        <h4 className="font-semibold text-sm text-foreground leading-snug line-clamp-2">
+          {name}
+        </h4>
 
         {servingSize && (
-          <p className="text-xs text-muted-foreground">{servingSize}</p>
+          <p className="text-[11px] text-muted-foreground line-clamp-1">{servingSize}</p>
         )}
 
         {hasMacros && (
-          <div className="flex flex-wrap gap-1 mt-1">
+          <div className="flex flex-wrap gap-1 mt-auto pt-1">
             {calories && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+              <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
                 {calories} cal
               </span>
             )}
             {protein && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
+              <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
                 P {protein}
               </span>
             )}
             {carbs && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
+              <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
                 C {carbs}
               </span>
             )}
             {fat && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0 h-5 text-[10px] font-medium bg-muted text-muted-foreground border border-border">
+              <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-muted text-muted-foreground border border-border">
                 F {fat}
               </span>
             )}
@@ -101,7 +106,7 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
         )}
 
         {(dietaryList.length > 0 || allergenList.length > 0) && (
-          <div className="flex flex-wrap gap-1 mt-1">
+          <div className="flex flex-wrap gap-1">
             {dietaryList.slice(0, 2).map((d, i) => (
               <Badge
                 key={`d-${i}`}
@@ -130,47 +135,109 @@ const FoodCard = forwardRef<HTMLDivElement, FoodCardProps>(({
         )}
       </button>
 
-      {expanded && (
-        <div className="border-t border-border/60 px-3 pb-3 pt-2 animate-fade-in">
-          {allergenList.length > 0 && (
-            <div className="mb-2">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">
-                Allergens
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {allergenList.map((a, i) => (
-                  <Badge key={i} variant="destructive" className="text-[10px]">
-                    <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />
-                    {typeof a === "string" ? a : String(a)}
-                  </Badge>
-                ))}
+      <Dialog open={expanded} onOpenChange={(o) => { if (!o) onToggle(); }}>
+        <DialogContent className="max-w-lg w-[calc(100%-2rem)] max-h-[85vh] overflow-y-auto rounded-2xl p-0 gap-0">
+          <DialogHeader className="px-5 pt-5 pb-3 text-left">
+            <DialogTitle className="text-base font-bold leading-snug pr-6">{name}</DialogTitle>
+            {servingSize && (
+              <p className="text-xs text-muted-foreground mt-1">{servingSize}</p>
+            )}
+          </DialogHeader>
+
+          <div className="px-5 pb-5 space-y-4">
+            {hasMacros && (
+              <div className="flex flex-wrap gap-1.5">
+                {calories && (
+                  <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                    {calories} cal
+                  </span>
+                )}
+                {protein && (
+                  <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
+                    Protein {protein}
+                  </span>
+                )}
+                {carbs && (
+                  <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
+                    Carbs {carbs}
+                  </span>
+                )}
+                {fat && (
+                  <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-muted text-muted-foreground border border-border">
+                    Fat {fat}
+                  </span>
+                )}
               </div>
-            </div>
-          )}
-          {dietaryList.length > 0 && (
-            <div className="mb-2">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1">
-                Dietary
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {dietaryList.map((d, i) => (
-                  <Badge
-                    key={i}
-                    className="text-[10px] bg-success hover:bg-success text-success-foreground"
-                  >
-                    <Leaf className="h-2.5 w-2.5 mr-0.5" />
-                    {String(d)}
-                  </Badge>
-                ))}
+            )}
+
+            {allergenList.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                  Allergens
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {allergenList.map((a, i) => (
+                    <Badge key={i} variant="destructive" className="text-[11px]">
+                      <AlertTriangle className="h-3 w-3 mr-0.5" />
+                      {typeof a === "string" ? a : String(a)}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-          <div className="-mx-1">
-            <NutritionPanel nutrients={nutrients} />
+            )}
+
+            {dietaryList.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                  Dietary
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {dietaryList.map((d, i) => (
+                    <Badge
+                      key={i}
+                      className="text-[11px] bg-success hover:bg-success text-success-foreground"
+                    >
+                      <Leaf className="h-3 w-3 mr-0.5" />
+                      {String(d)}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {nutrientEntries.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                  Nutrition Facts
+                </p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-0 rounded-xl border border-border/60 bg-card p-3">
+                  {nutrientEntries.map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="flex justify-between text-xs py-1 border-b border-border/40 last:border-b-0"
+                    >
+                      <span className="text-muted-foreground truncate pr-2">{label}</span>
+                      <span className="font-medium text-foreground shrink-0">{value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {ingredients && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">
+                  Ingredients
+                </p>
+                <p className="text-xs leading-relaxed text-foreground/90 whitespace-normal break-words rounded-xl border border-border/60 bg-muted/30 p-3">
+                  {ingredients}
+                </p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-    </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 });
 FoodCard.displayName = "FoodCard";

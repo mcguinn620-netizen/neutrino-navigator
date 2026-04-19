@@ -16,7 +16,7 @@ import { useSwipeBack } from "@/hooks/use-swipe-back";
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 interface DiningHall { id: string; name: string; unit_oid: number; }
-interface Station { id: string; name: string; dining_hall_id: string; }
+interface Station { id: string; name: string; dining_hall_id: string; unit_oid: number; }
 interface MenuCategory { id: string; name: string; station_id: string; }
 interface FoodItem {
   id: string;
@@ -49,7 +49,7 @@ const Index = () => {
   const { data: halls = [] } = useQuery({
     queryKey: ["dining-halls"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("dining_halls").select("*").order("name");
+      const { data, error } = await supabase.from("dining_halls").select("*").order("unit_oid");
       if (error) throw error;
       return data as DiningHall[];
     },
@@ -58,7 +58,7 @@ const Index = () => {
   const { data: stations = [] } = useQuery({
     queryKey: ["stations", "all"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("stations").select("*").order("name");
+      const { data, error } = await supabase.from("stations").select("*").order("unit_oid");
       if (error) throw error;
       return data as Station[];
     },
