@@ -157,10 +157,14 @@ const KNOWN_HALLS = [
   { name: "Atrium Café", unitOid: 10 },
   { name: "Noyer", unitOid: 14 },
   { name: "Student Center Tally Food Court", unitOid: 16 },
-  { name: "North Dining", unitOid: 21 },
-  // Woodworth Commons sits behind a units-list (unit oid 38). Its meal-period
-  // child units (Lunch / Dinner) are exposed via SelectUnitFromUnitsList and
-  // typically begin around unit oid 40. See scrapeSingleHall's Woodworth probe.
+  // North Dining's correct sidebar unit oid is 25. Its stations are exposed as
+  // courses (selectCourse / courseOid), not child unit oids — see parseCourses
+  // and the course-drill branch in scrapeSingleHall.
+  { name: "North Dining", unitOid: 25 },
+  // Woodworth Commons sits behind a units-list (unit oid 38). The units-list
+  // child is "Daily Menu", and inside that the meal-period menus (Lunch /
+  // Dinner) are exposed as menuOids via menuListSelectMenu / selectMenu.
+  // See scrapeSingleHall's Woodworth probe + processHallMenuList.
   { name: "Woodworth Commons", unitOid: 38 },
   { name: "Bookmark Cafe", unitOid: 33 },
   { name: "Tom John Food Shop", unitOid: 35 },
@@ -248,6 +252,33 @@ function parseMenus(html: string): { name: string; menuOid: number }[] {
     }
   }
   return menus;
+}
+
+/**
+ * Parse course links — used by halls like North Dining where stations are
+ * actually courses (selectCourse(N) / courseListSelectCourse(N)).
+ * Returns { name, courseOid } pairs for each course found in the panel HTML.
+ */
+function parseCourses(html: string): { name: string; courseOid: number }[] {
+  const courses: { name: string; courseOid: number }[] = [];
+  const seen = new Set<number>();
+  const regexes = [
+    /selectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+    /courseListSelectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+    /SelectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const courseOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(courseOid)) {
+        seen.add(courseOid);
+        courses.push({ courseOid, name });
+      }
+    }
+  }
+  return courses;
 }
 
 interface ParsedFoodItem {
@@ -1098,11 +1129,14 @@ async function scrapeSingleHall(
 
   if (dedupedUnitsList.length > 0) {
     console.log(
-      `  Hall ${hall.name} exposes ${dedupedUnitsList.length} units-list entries — treating each as a meal-period station`,
+      `  Hall ${hall.name} exposes ${dedupedUnitsList.length} units-list entries — keeping each as a placeholder station and drilling into menuOids`,
     );
     for (const child of dedupedUnitsList) {
       console.log(`    Units-list child: ${child.name} (unitOid: ${child.unitOid})`);
 
+      // Keep the units-list child (e.g. "Daily Menu") as its own placeholder
+      // station — the user explicitly asked to keep this, since it represents
+      // the hall's published menu source.
       const { data: stationData, error: stationError } = await supabase
         .from("stations")
         .upsert(
@@ -1135,7 +1169,7 @@ async function scrapeSingleHall(
       const childMenuHtml = extractPanelHtml(childResp, "menuPanel");
       const childChildUnitsHtml = extractPanelHtml(childResp, "childUnitsPanel");
 
-      // Direct items
+      // Direct items in the placeholder station (rare for Daily Menu)
       if (childItemHtml && childItemHtml.includes("cbo_nn_itemHover")) {
         totalItems += await processItemPanel(
           supabase,
@@ -1143,37 +1177,32 @@ async function scrapeSingleHall(
           stationData.id,
           childItemHtml,
         );
-        continue;
       }
 
-      // Dated menu list inside the meal period
-      const childMenus = parseMenus(
-        [childMenuHtml, childChildUnitsHtml, childItemHtml]
-          .filter(Boolean)
-          .join("\n"),
-      );
-      if (childMenus.length > 0) {
-        // Pick the first menu (today's) and load it
-        const firstMenu = childMenus[0];
+      // Dated menu list buried inside the panels — for halls like Woodworth
+      // Commons each menuOid corresponds to a meal (Lunch/Dinner) for a
+      // specific date. processHallMenuList groups by meal name and creates
+      // a station per meal with date-prefixed categories.
+      const combinedHtml = [childMenuHtml, childChildUnitsHtml, childItemHtml, childResp]
+        .filter(Boolean)
+        .join("\n");
+      const datedMenus = parseMenusWithDates(combinedHtml);
+
+      if (datedMenus.length > 0) {
         console.log(
-          `    ${child.name}: loading menu "${firstMenu.name}" (oid ${firstMenu.menuOid})`,
+          `    ${child.name}: discovered ${datedMenus.length} menuOid(s) — splitting into per-meal stations`,
         );
-        const menuResp = await postWithRetry(
+        totalItems += await processHallMenuList(
+          supabase,
           session,
-          "/Menu/SelectMenu",
-          { menuOid: firstMenu.menuOid },
+          hallData.id,
+          hall.unitOid,
+          datedMenus,
         );
-        if (!isStartupError(menuResp)) {
-          const menuItemHtml = extractPanelHtml(menuResp, "itemPanel");
-          if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
-            totalItems += await processItemPanel(
-              supabase,
-              session,
-              stationData.id,
-              menuItemHtml,
-            );
-          }
-        }
+      } else {
+        console.log(
+          `    ${child.name}: no menuOids found in panels (item=${childItemHtml.length}, menu=${childMenuHtml.length}, childUnits=${childChildUnitsHtml.length})`,
+        );
       }
     }
 
@@ -1244,6 +1273,82 @@ async function scrapeSingleHall(
       );
     }
 
+    return { hallName: hall.name, itemsCount: totalItems };
+  }
+
+  // ── Course-list probe (e.g. North Dining) ──
+  // Some halls expose their stations as "courses" instead of child units. We
+  // detect `selectCourse(N)` / `courseListSelectCourse(N)` triggers in any
+  // panel and create one station per course, fetching its items via
+  // /Course/SelectCourse.
+  const courseEntries = [
+    ...parseCourses(childUnitsHtml),
+    ...parseCourses(itemPanelHtml),
+    ...parseCourses(menuPanelHtml),
+    ...parseCourses(sidebarResponse),
+  ];
+  const dedupedCourses: { name: string; courseOid: number }[] = [];
+  const seenCourseOids = new Set<number>();
+  for (const c of courseEntries) {
+    if (seenCourseOids.has(c.courseOid)) continue;
+    seenCourseOids.add(c.courseOid);
+    dedupedCourses.push(c);
+  }
+
+  if (dedupedCourses.length > 0) {
+    console.log(
+      `  Hall ${hall.name} exposes ${dedupedCourses.length} courses — creating one station per course`,
+    );
+    for (const course of dedupedCourses) {
+      // Synthetic unit_oid to avoid collisions with real unitOids — derived
+      // from the hall + courseOid.
+      const syntheticOid = hall.unitOid * 100000 + course.courseOid;
+      console.log(
+        `    Course: ${course.name} (courseOid: ${course.courseOid}, synthetic unit_oid: ${syntheticOid})`,
+      );
+
+      const { data: stationData, error: stationError } = await supabase
+        .from("stations")
+        .upsert(
+          {
+            dining_hall_id: hallData.id,
+            name: course.name,
+            unit_oid: syntheticOid,
+          },
+          { onConflict: "unit_oid" },
+        )
+        .select("id")
+        .single();
+
+      if (stationError || !stationData) {
+        console.error(`    Failed to upsert course station ${course.name}:`, stationError);
+        continue;
+      }
+
+      const courseResp = await postWithRetry(
+        session,
+        "/Course/SelectCourse",
+        { courseOid: course.courseOid },
+      );
+      if (isStartupError(courseResp)) {
+        console.log(`    Skipping course ${course.name}: Start-up Error`);
+        continue;
+      }
+
+      const courseItemHtml = extractPanelHtml(courseResp, "itemPanel");
+      if (courseItemHtml && courseItemHtml.includes("cbo_nn_itemHover")) {
+        totalItems += await processItemPanel(
+          supabase,
+          session,
+          stationData.id,
+          courseItemHtml,
+        );
+      } else {
+        console.log(
+          `    Course ${course.name}: no items in panel (length ${courseItemHtml?.length ?? 0})`,
+        );
+      }
+    }
     return { hallName: hall.name, itemsCount: totalItems };
   }
 
