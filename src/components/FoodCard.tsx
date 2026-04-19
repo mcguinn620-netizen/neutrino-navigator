@@ -63,7 +63,7 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
   return (
     <>
       <button
-        ref={ref as React.Ref<HTMLButtonElement>}
+        ref={ref}
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
