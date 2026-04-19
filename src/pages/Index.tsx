@@ -319,7 +319,7 @@ const Index = () => {
                   <button
                     key={hall.id}
                     onClick={() => setView({ level: "stations", hallId: hall.id })}
-                    className="group text-left rounded-2xl bg-card border border-border/60 shadow-sm p-4 min-h-[140px] flex flex-col justify-between active:scale-[0.97] transition-transform"
+                    className="group text-left rounded-2xl bg-card border border-border/60 shadow-sm p-4 min-h-[150px] landscape:min-h-[140px] flex flex-col justify-between active:scale-[0.97] transition-transform"
                   >
                     <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", accent)}>
                       <Building2 className="h-5 w-5" />
