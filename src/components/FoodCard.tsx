@@ -120,9 +120,9 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
               <Badge
                 key={`a-${i}`}
                 variant="destructive"
-                className="text-[10px] px-1.5 py-0 h-5 gap-0.5"
+                className="text-xs px-2 py-0.5 h-6 gap-1"
               >
-                <AlertTriangle className="h-2.5 w-2.5" />
+                <AlertTriangle className="h-3 w-3" />
                 {typeof a === "string" ? a.split("(")[0].trim() : String(a)}
               </Badge>
             ))}
