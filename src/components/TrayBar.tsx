@@ -3,7 +3,7 @@ import { ShoppingBag, Plus, Minus, Trash2, X } from "lucide-react";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { useAppStore, type MealType } from "@/lib/store";
-import { aggregateNutrients, findNutrient, MACRO_KEYS, formatNutrient } from "@/lib/nutrition";
+import { aggregateNutrients, findNutrient, findInTotals, MACRO_KEYS } from "@/lib/nutrition";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -29,7 +29,7 @@ const TrayBar = () => {
 
   const totalItems = tray.reduce((s, t) => s + t.quantity, 0);
   const agg = aggregateNutrients(tray);
-  const cal = findNutrient(agg.totals, MACRO_KEYS.calories);
+  const cal = findInTotals(agg.totals, MACRO_KEYS.calories);
 
   const handleLog = (meal: MealType) => {
     logTray(meal);
@@ -97,7 +97,7 @@ const TrayBar = () => {
 
           <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
             {tray.map((item) => {
-              const itemCal = findNutrient(item.nutrients as never, MACRO_KEYS.calories);
+              const itemCal = findNutrient(item.nutrients, MACRO_KEYS.calories);
               return (
                 <div
                   key={item.trayId}

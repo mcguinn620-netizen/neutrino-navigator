@@ -143,3 +143,17 @@ export const KEY_MICROS = [
   "Sodium",
   "Saturated Fat",
 ];
+
+// Find a parsed nutrient by candidate keys inside an aggregated totals map.
+export const findInTotals = (
+  totals: Record<string, ParsedNutrient>,
+  keys: readonly string[],
+): ParsedNutrient | null => {
+  const lc: Record<string, string> = {};
+  for (const k of Object.keys(totals)) lc[k.toLowerCase()] = k;
+  for (const k of keys) {
+    const realKey = lc[k.toLowerCase()];
+    if (realKey) return totals[realKey];
+  }
+  return null;
+};
