@@ -254,6 +254,33 @@ function parseMenus(html: string): { name: string; menuOid: number }[] {
   return menus;
 }
 
+/**
+ * Parse course links — used by halls like North Dining where stations are
+ * actually courses (selectCourse(N) / courseListSelectCourse(N)).
+ * Returns { name, courseOid } pairs for each course found in the panel HTML.
+ */
+function parseCourses(html: string): { name: string; courseOid: number }[] {
+  const courses: { name: string; courseOid: number }[] = [];
+  const seen = new Set<number>();
+  const regexes = [
+    /selectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+    /courseListSelectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+    /SelectCourse\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const courseOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(courseOid)) {
+        seen.add(courseOid);
+        courses.push({ courseOid, name });
+      }
+    }
+  }
+  return courses;
+}
+
 interface ParsedFoodItem {
   name: string;
   detailOid: number;
