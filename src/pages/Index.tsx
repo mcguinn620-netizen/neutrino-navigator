@@ -419,7 +419,7 @@ const Index = () => {
               <p className="text-sm text-muted-foreground">No items match your filters.</p>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 items-start">
+            <div className="grid grid-cols-2 gap-3 items-start">
               {itemsForCategory.map((item) => (
                 <FoodCard
                   key={item.id}
