@@ -68,7 +68,7 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
         onClick={onToggle}
         aria-expanded={expanded}
         className={cn(
-          "text-left w-full rounded-2xl bg-card border border-border/60 shadow-sm p-3 min-h-[140px]",
+          "text-left w-full rounded-2xl bg-card border border-border/60 shadow-sm p-3 min-h-[150px] landscape:min-h-[140px]",
           "flex flex-col gap-1.5 active:scale-[0.97] transition-transform",
         )}
       >
