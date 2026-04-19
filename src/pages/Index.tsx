@@ -16,7 +16,7 @@ import { useSwipeBack } from "@/hooks/use-swipe-back";
 type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 interface DiningHall { id: string; name: string; unit_oid: number; }
-interface Station { id: string; name: string; dining_hall_id: string; }
+interface Station { id: string; name: string; dining_hall_id: string; unit_oid: number; }
 interface MenuCategory { id: string; name: string; station_id: string; }
 interface FoodItem {
   id: string;
