@@ -11,20 +11,22 @@ import { SlidersHorizontal, AlertTriangle, Leaf } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ALLERGENS = [
-  "Gluten",
+  "Almonds",
+  "Coconut",
+  "Eggs",
+  "Fish",
+  "Gluten (wheat, rye, barley, oats)",
   "Milk",
+  "Peanuts",
+  "Pecan nut",
+  "Pork",
+  "Sesame seeds",
+  "Shellfish",
   "Soy",
   "Tree Nuts",
-  "Peanuts",
-  "Eggs",
-  "Shellfish",
-  "Fish",
-  "Pork",
-  "Coconut",
-  "Sesame seeds",
   "Cross contact may occur-manufacturing/frying",
 ];
-const DIETARY = ["Vegan", "Vegetarian"];
+const DIETARY = ["Vegan", "Vegetarian", "Kosher"];
 
 interface FilterSheetProps {
   selectedAllergens: string[];
