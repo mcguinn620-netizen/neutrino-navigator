@@ -1276,6 +1276,82 @@ async function scrapeSingleHall(
     return { hallName: hall.name, itemsCount: totalItems };
   }
 
+  // ── Course-list probe (e.g. North Dining) ──
+  // Some halls expose their stations as "courses" instead of child units. We
+  // detect `selectCourse(N)` / `courseListSelectCourse(N)` triggers in any
+  // panel and create one station per course, fetching its items via
+  // /Course/SelectCourse.
+  const courseEntries = [
+    ...parseCourses(childUnitsHtml),
+    ...parseCourses(itemPanelHtml),
+    ...parseCourses(menuPanelHtml),
+    ...parseCourses(sidebarResponse),
+  ];
+  const dedupedCourses: { name: string; courseOid: number }[] = [];
+  const seenCourseOids = new Set<number>();
+  for (const c of courseEntries) {
+    if (seenCourseOids.has(c.courseOid)) continue;
+    seenCourseOids.add(c.courseOid);
+    dedupedCourses.push(c);
+  }
+
+  if (dedupedCourses.length > 0) {
+    console.log(
+      `  Hall ${hall.name} exposes ${dedupedCourses.length} courses — creating one station per course`,
+    );
+    for (const course of dedupedCourses) {
+      // Synthetic unit_oid to avoid collisions with real unitOids — derived
+      // from the hall + courseOid.
+      const syntheticOid = hall.unitOid * 100000 + course.courseOid;
+      console.log(
+        `    Course: ${course.name} (courseOid: ${course.courseOid}, synthetic unit_oid: ${syntheticOid})`,
+      );
+
+      const { data: stationData, error: stationError } = await supabase
+        .from("stations")
+        .upsert(
+          {
+            dining_hall_id: hallData.id,
+            name: course.name,
+            unit_oid: syntheticOid,
+          },
+          { onConflict: "unit_oid" },
+        )
+        .select("id")
+        .single();
+
+      if (stationError || !stationData) {
+        console.error(`    Failed to upsert course station ${course.name}:`, stationError);
+        continue;
+      }
+
+      const courseResp = await postWithRetry(
+        session,
+        "/Course/SelectCourse",
+        { courseOid: course.courseOid },
+      );
+      if (isStartupError(courseResp)) {
+        console.log(`    Skipping course ${course.name}: Start-up Error`);
+        continue;
+      }
+
+      const courseItemHtml = extractPanelHtml(courseResp, "itemPanel");
+      if (courseItemHtml && courseItemHtml.includes("cbo_nn_itemHover")) {
+        totalItems += await processItemPanel(
+          supabase,
+          session,
+          stationData.id,
+          courseItemHtml,
+        );
+      } else {
+        console.log(
+          `    Course ${course.name}: no items in panel (length ${courseItemHtml?.length ?? 0})`,
+        );
+      }
+    }
+    return { hallName: hall.name, itemsCount: totalItems };
+  }
+
   const stations = parseStations(childUnitsHtml);
   console.log(`  Found ${stations.length} stations`);
 
