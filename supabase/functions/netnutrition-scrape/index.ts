@@ -1041,6 +1041,20 @@ async function scrapeSingleHall(
         .map((p: { id: string; html?: string }) => `${p.id}=${p.html?.length ?? 0}`)
         .join(", ");
       console.log(`  [panels] ${hall.name}: ${summary}`);
+
+      // DEBUG: dump full HTML for Woodworth so we can see Lunch/Dinner markup
+      if (hall.name.toLowerCase().includes("woodworth")) {
+        for (const p of parsed.panels as { id: string; html?: string }[]) {
+          const h = (p.html ?? "").replace(/\s+/g, " ").trim();
+          if (!h) continue;
+          const chunks = Math.ceil(h.length / 1500);
+          for (let i = 0; i < chunks; i++) {
+            console.log(
+              `  [WOODWORTH-DEBUG] panel=${p.id} part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
+            );
+          }
+        }
+      }
     }
   } catch {
     console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
