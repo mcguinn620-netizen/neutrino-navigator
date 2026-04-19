@@ -1144,6 +1144,27 @@ async function scrapeSingleHall(
       { unitOid: hall.unitOid },
     );
 
+    // DEBUG: dump childFallback panel HTML for Woodworth
+    if (hall.name.toLowerCase().includes("woodworth")) {
+      try {
+        const parsed = JSON.parse(childFallback);
+        if (Array.isArray(parsed.panels)) {
+          for (const p of parsed.panels as { id: string; html?: string }[]) {
+            const h = (p.html ?? "").replace(/\s+/g, " ").trim();
+            if (!h) continue;
+            const chunks = Math.ceil(h.length / 1500);
+            for (let i = 0; i < chunks; i++) {
+              console.log(
+                `  [WOODWORTH-FALLBACK] panel=${p.id} part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
+              );
+            }
+          }
+        }
+      } catch {
+        console.log(`  [WOODWORTH-FALLBACK] non-JSON: ${childFallback.substring(0, 2000)}`);
+      }
+    }
+
     if (!isStartupError(childFallback)) {
       const fallbackItemHtml = extractPanelHtml(childFallback, "itemPanel");
       const fallbackChildHtml = extractPanelHtml(
