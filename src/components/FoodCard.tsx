@@ -120,10 +120,12 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
               <Badge
                 key={`a-${i}`}
                 variant="destructive"
-                className="text-[11px] px-2 py-0.5 h-6 gap-1"
+                className="text-[11px] px-2 py-0.5 h-6 gap-1 max-w-full"
               >
-                <AlertTriangle className="h-3 w-3" />
-                {typeof a === "string" ? a.split("(")[0].trim() : String(a)}
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {typeof a === "string" ? a.split("(")[0].trim() : String(a)}
+                </span>
               </Badge>
             ))}
             {allergenList.length + dietaryList.length > 4 && (
