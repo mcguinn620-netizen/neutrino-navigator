@@ -1129,11 +1129,14 @@ async function scrapeSingleHall(
 
   if (dedupedUnitsList.length > 0) {
     console.log(
-      `  Hall ${hall.name} exposes ${dedupedUnitsList.length} units-list entries — treating each as a meal-period station`,
+      `  Hall ${hall.name} exposes ${dedupedUnitsList.length} units-list entries — keeping each as a placeholder station and drilling into menuOids`,
     );
     for (const child of dedupedUnitsList) {
       console.log(`    Units-list child: ${child.name} (unitOid: ${child.unitOid})`);
 
+      // Keep the units-list child (e.g. "Daily Menu") as its own placeholder
+      // station — the user explicitly asked to keep this, since it represents
+      // the hall's published menu source.
       const { data: stationData, error: stationError } = await supabase
         .from("stations")
         .upsert(
@@ -1166,7 +1169,7 @@ async function scrapeSingleHall(
       const childMenuHtml = extractPanelHtml(childResp, "menuPanel");
       const childChildUnitsHtml = extractPanelHtml(childResp, "childUnitsPanel");
 
-      // Direct items
+      // Direct items in the placeholder station (rare for Daily Menu)
       if (childItemHtml && childItemHtml.includes("cbo_nn_itemHover")) {
         totalItems += await processItemPanel(
           supabase,
@@ -1174,37 +1177,32 @@ async function scrapeSingleHall(
           stationData.id,
           childItemHtml,
         );
-        continue;
       }
 
-      // Dated menu list inside the meal period
-      const childMenus = parseMenus(
-        [childMenuHtml, childChildUnitsHtml, childItemHtml]
-          .filter(Boolean)
-          .join("\n"),
-      );
-      if (childMenus.length > 0) {
-        // Pick the first menu (today's) and load it
-        const firstMenu = childMenus[0];
+      // Dated menu list buried inside the panels — for halls like Woodworth
+      // Commons each menuOid corresponds to a meal (Lunch/Dinner) for a
+      // specific date. processHallMenuList groups by meal name and creates
+      // a station per meal with date-prefixed categories.
+      const combinedHtml = [childMenuHtml, childChildUnitsHtml, childItemHtml, childResp]
+        .filter(Boolean)
+        .join("\n");
+      const datedMenus = parseMenusWithDates(combinedHtml);
+
+      if (datedMenus.length > 0) {
         console.log(
-          `    ${child.name}: loading menu "${firstMenu.name}" (oid ${firstMenu.menuOid})`,
+          `    ${child.name}: discovered ${datedMenus.length} menuOid(s) — splitting into per-meal stations`,
         );
-        const menuResp = await postWithRetry(
+        totalItems += await processHallMenuList(
+          supabase,
           session,
-          "/Menu/SelectMenu",
-          { menuOid: firstMenu.menuOid },
+          hallData.id,
+          hall.unitOid,
+          datedMenus,
         );
-        if (!isStartupError(menuResp)) {
-          const menuItemHtml = extractPanelHtml(menuResp, "itemPanel");
-          if (menuItemHtml && menuItemHtml.includes("cbo_nn_itemHover")) {
-            totalItems += await processItemPanel(
-              supabase,
-              session,
-              stationData.id,
-              menuItemHtml,
-            );
-          }
-        }
+      } else {
+        console.log(
+          `    ${child.name}: no menuOids found in panels (item=${childItemHtml.length}, menu=${childMenuHtml.length}, childUnits=${childChildUnitsHtml.length})`,
+        );
       }
     }
 
