@@ -158,7 +158,10 @@ const KNOWN_HALLS = [
   { name: "Noyer", unitOid: 14 },
   { name: "Student Center Tally Food Court", unitOid: 16 },
   { name: "North Dining", unitOid: 21 },
-  { name: "Woodworth Commons", unitOid: 27 },
+  // Woodworth Commons sits behind a units-list (unit oid 38). Its meal-period
+  // child units (Lunch / Dinner) are exposed via SelectUnitFromUnitsList and
+  // typically begin around unit oid 40. See scrapeSingleHall's Woodworth probe.
+  { name: "Woodworth Commons", unitOid: 38 },
   { name: "Bookmark Cafe", unitOid: 33 },
   { name: "Tom John Food Shop", unitOid: 35 },
 ];
