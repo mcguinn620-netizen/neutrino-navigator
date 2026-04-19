@@ -81,7 +81,7 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(({
         )}
 
         {hasMacros && (
-          <div className="flex flex-wrap gap-1 mt-auto pt-1">
+          <div className="flex flex-wrap gap-1 pt-0.5">
             {calories && (
               <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
                 {calories} cal
