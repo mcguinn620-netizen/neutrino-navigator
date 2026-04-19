@@ -157,10 +157,14 @@ const KNOWN_HALLS = [
   { name: "Atrium Café", unitOid: 10 },
   { name: "Noyer", unitOid: 14 },
   { name: "Student Center Tally Food Court", unitOid: 16 },
-  { name: "North Dining", unitOid: 21 },
-  // Woodworth Commons sits behind a units-list (unit oid 38). Its meal-period
-  // child units (Lunch / Dinner) are exposed via SelectUnitFromUnitsList and
-  // typically begin around unit oid 40. See scrapeSingleHall's Woodworth probe.
+  // North Dining's correct sidebar unit oid is 25. Its stations are exposed as
+  // courses (selectCourse / courseOid), not child unit oids — see parseCourses
+  // and the course-drill branch in scrapeSingleHall.
+  { name: "North Dining", unitOid: 25 },
+  // Woodworth Commons sits behind a units-list (unit oid 38). The units-list
+  // child is "Daily Menu", and inside that the meal-period menus (Lunch /
+  // Dinner) are exposed as menuOids via menuListSelectMenu / selectMenu.
+  // See scrapeSingleHall's Woodworth probe + processHallMenuList.
   { name: "Woodworth Commons", unitOid: 38 },
   { name: "Bookmark Cafe", unitOid: 33 },
   { name: "Tom John Food Shop", unitOid: 35 },
