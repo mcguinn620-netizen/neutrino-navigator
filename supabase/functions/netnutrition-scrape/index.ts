@@ -200,6 +200,32 @@ function parseStations(html: string): { name: string; unitOid: number }[] {
   return stations;
 }
 
+/**
+ * Parse units-list links — used by halls like Woodworth Commons that expose
+ * meal periods (Lunch / Dinner) via a units-list panel rather than the usual
+ * childUnits panel. Triggered by `unitsListSelectUnit(N)` JS handlers.
+ */
+function parseUnitsList(html: string): { name: string; unitOid: number }[] {
+  const units: { name: string; unitOid: number }[] = [];
+  const seen = new Set<number>();
+  const regexes = [
+    /unitsListSelectUnit\((\d+)\)[^>]*>([^<]+)/gi,
+    /selectUnitFromUnitsList\((\d+)\)[^>]*>([^<]+)/gi,
+  ];
+  for (const regex of regexes) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const unitOid = parseInt(match[1]);
+      const name = match[2].replace(/&nbsp;/g, " ").trim();
+      if (name && !seen.has(unitOid)) {
+        seen.add(unitOid);
+        units.push({ unitOid, name });
+      }
+    }
+  }
+  return units;
+}
+
 /** Parse menu links (Daily Menu style) from a panel. */
 function parseMenus(html: string): { name: string; menuOid: number }[] {
   const menus: { name: string; menuOid: number }[] = [];
