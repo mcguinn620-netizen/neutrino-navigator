@@ -1058,6 +1058,15 @@ async function scrapeSingleHall(
     }
   } catch {
     console.log(`  [panels] ${hall.name}: non-JSON sidebar response`);
+    if (hall.name.toLowerCase().includes("woodworth")) {
+      const h = sidebarResponse.replace(/\s+/g, " ").trim();
+      const chunks = Math.ceil(h.length / 1500);
+      for (let i = 0; i < chunks; i++) {
+        console.log(
+          `  [WOODWORTH-RAW-SIDEBAR] part=${i + 1}/${chunks}: ${h.substring(i * 1500, (i + 1) * 1500)}`,
+        );
+      }
+    }
   }
 
   let hallMenus = menuPanelHtml ? parseMenusWithDates(menuPanelHtml) : [];
