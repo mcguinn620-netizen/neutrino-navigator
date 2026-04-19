@@ -10,27 +10,31 @@ All colors MUST be HSL.
   :root {
     /* Ball State University — Light theme.
        App background uses a soft tint so white cards have natural separation. */
-    --background: 210 20% 97%;
+    /* App background = pure white. Cards use BSU "Beneficence" warm cream
+       so they have natural separation against the white canvas. */
+    --background: 0 0% 100%;
     --foreground: 0 0% 8%;
 
-    --card: 0 0% 100%;
+    /* Beneficence cream #F4EFE6 — official BSU supporting neutral */
+    --card: 39 33% 93%;
     --card-foreground: 0 0% 8%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 0%;
+    --popover: 39 33% 93%;
+    --popover-foreground: 0 0% 8%;
 
     /* Cardinal Red #BA0C2F — dominant brand color */
     --primary: 350 88% 39%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 13% 95%;
-    --secondary-foreground: 206 3% 35%;
+    /* Secondary surfaces tinted from Beneficence cream for cohesion */
+    --secondary: 39 30% 90%;
+    --secondary-foreground: 206 3% 25%;
 
-    --muted: 210 13% 95%;
-    --muted-foreground: 206 3% 35%;
+    --muted: 39 28% 92%;
+    --muted-foreground: 206 5% 38%;
 
-    --accent: 210 13% 92%;
-    --accent-foreground: 206 3% 35%;
+    --accent: 39 30% 88%;
+    --accent-foreground: 206 3% 25%;
 
     /* Use Cardinal Red for destructive too — single brand red */
     --destructive: 350 88% 39%;
@@ -45,12 +49,12 @@ All colors MUST be HSL.
     --bsu-blue: 196 100% 33%;
     --bsu-light-blue: 196 60% 80%;
 
-    --border: 210 12% 88%;
-    --input: 210 12% 88%;
+    --border: 39 20% 84%;
+    --input: 39 20% 84%;
     --ring: 350 88% 39%;
 
     /* Soft elevated card shadow for light theme */
-    --shadow-card: 0 1px 2px 0 hsl(210 30% 30% / 0.04), 0 4px 16px -8px hsl(210 30% 30% / 0.08);
+    --shadow-card: 0 1px 2px 0 hsl(30 20% 20% / 0.04), 0 4px 16px -8px hsl(30 20% 20% / 0.08);
 
     --radius: 1rem;
 
