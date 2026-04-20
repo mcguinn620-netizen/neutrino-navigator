@@ -1251,13 +1251,17 @@ async function scrapeSingleHall(
       `  Hall ${hall.name} returned items directly (no stations, no menu list)`,
     );
 
+    // Use a synthetic, namespaced unit_oid to avoid collisions with other halls'
+    // station unit_oids (e.g. North Dining has stations at unit_oid 33 / 35
+    // which would otherwise clash with Bookmark Cafe / Tom John Food Shop).
+    const syntheticOid = hall.unitOid * 100000;
     const { data: stationData, error: stationError } = await supabase
       .from("stations")
       .upsert(
         {
           dining_hall_id: hallData.id,
           name: hall.name,
-          unit_oid: hall.unitOid,
+          unit_oid: syntheticOid,
         },
         { onConflict: "unit_oid" },
       )
