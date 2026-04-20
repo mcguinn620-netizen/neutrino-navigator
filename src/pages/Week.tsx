@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import PullToRefresh from "@/components/PullToRefresh";
 import { useAppStore } from "@/lib/store";
 import {
   aggregateNutrients,
@@ -25,6 +26,12 @@ interface WeekBucket {
 const Week = () => {
   const logs = useAppStore((s) => s.logs);
   const goals = useAppStore((s) => s.goals);
+  const [, setRefreshTick] = useState(0);
+
+  const handleRefresh = async () => {
+    await new Promise((r) => setTimeout(r, 400));
+    setRefreshTick((n) => n + 1);
+  };
 
   const weeks = useMemo<WeekBucket[]>(() => {
     const now = new Date();
@@ -63,6 +70,7 @@ const Week = () => {
     <>
       <AppHeader title="Week" subtitle="Trends over the last 5 weeks" />
 
+      <PullToRefresh onRefresh={handleRefresh}>
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-4 animate-fade-in">
         {/* Current week hero */}
         <section className="rounded-3xl bg-primary text-primary-foreground p-5 shadow-lg shadow-primary/20">
@@ -166,6 +174,7 @@ const Week = () => {
           )}
         </div>
       </main>
+      </PullToRefresh>
     </>
   );
 };

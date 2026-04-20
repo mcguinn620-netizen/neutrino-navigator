@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import PullToRefresh from "@/components/PullToRefresh";
 import { useAppStore } from "@/lib/store";
 import { Heart, Plus, X, ChevronRight, Utensils } from "lucide-react";
 import { findNutrient, MACRO_KEYS } from "@/lib/nutrition";
@@ -24,6 +25,12 @@ const Favorites = () => {
   const { toast } = useToast();
 
   const [openHall, setOpenHall] = useState<string | null>(null);
+  const [, setRefreshTick] = useState(0);
+
+  const handleRefresh = async () => {
+    await new Promise((r) => setTimeout(r, 400));
+    setRefreshTick((n) => n + 1);
+  };
 
   // Group by hall -> station
   const grouped = useMemo<HallGroup[]>(() => {
@@ -49,6 +56,7 @@ const Favorites = () => {
     <>
       <AppHeader title="Favorites" subtitle={`${favorites.length} saved item${favorites.length === 1 ? "" : "s"}`} />
 
+      <PullToRefresh onRefresh={handleRefresh}>
       <main className="max-w-2xl mx-auto px-4 py-4 animate-fade-in">
         {favorites.length === 0 ? (
           <div className="text-center py-12">
@@ -89,6 +97,7 @@ const Favorites = () => {
           </div>
         )}
       </main>
+      </PullToRefresh>
 
       {/* Hall detail bottom sheet */}
       <Sheet open={!!activeHall} onOpenChange={(o) => !o && setOpenHall(null)}>

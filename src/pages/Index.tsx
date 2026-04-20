@@ -9,6 +9,7 @@ import { RefreshCw, Search, Utensils, ChevronRight, ChevronLeft, X, Building2, S
 import { useToast } from "@/hooks/use-toast";
 import FoodCard from "@/components/FoodCard";
 import FilterSheet from "@/components/FilterSheet";
+import PullToRefresh from "@/components/PullToRefresh";
 import SettingsSheet from "@/components/SettingsSheet";
 import { cn } from "@/lib/utils";
 import { useSwipeBack } from "@/hooks/use-swipe-back";
@@ -309,6 +310,12 @@ const Index = () => {
       </header>
 
       {/* Main content */}
+      <PullToRefresh
+        onRefresh={async () => {
+          // Re-fetch cached data only — does NOT trigger scrape
+          await queryClient.invalidateQueries();
+        }}
+      >
       <main className="max-w-2xl mx-auto px-4 py-4 animate-fade-in" key={view.level + ("hallId" in view ? view.hallId : "") + ("stationId" in view ? view.stationId : "") + ("categoryId" in view ? view.categoryId : "")}>
         {/* HALLS */}
         {view.level === "halls" && (
@@ -457,6 +464,7 @@ const Index = () => {
           )
         )}
       </main>
+      </PullToRefresh>
     </div>
   );
 };
