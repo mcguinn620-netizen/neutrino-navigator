@@ -49,6 +49,12 @@ All colors MUST be HSL.
     --bsu-blue: 196 100% 33%;
     --bsu-light-blue: 196 60% 80%;
 
+    /* Macro nutrient accent tokens — vivid, accessible on white text */
+    --macro-cal: 350 88% 45%;     /* cardinal red, brand-aligned */
+    --macro-protein: 142 65% 38%; /* green */
+    --macro-carbs: 35 92% 48%;    /* amber */
+    --macro-fat: 217 85% 52%;     /* blue */
+
     --border: 39 20% 84%;
     --input: 39 20% 84%;
     --ring: 350 88% 39%;
@@ -108,6 +114,12 @@ All colors MUST be HSL.
     --bsu-yellow: 47 97% 65%;
     --bsu-blue: 196 80% 45%;
     --bsu-light-blue: 196 50% 70%;
+
+    /* Macro nutrient accent tokens — slightly brighter for dark bg */
+    --macro-cal: 350 80% 55%;
+    --macro-protein: 142 60% 48%;
+    --macro-carbs: 35 90% 55%;
+    --macro-fat: 217 85% 60%;
 
     --border: 206 3% 22%;
     --input: 206 3% 22%;

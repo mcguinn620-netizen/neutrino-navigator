@@ -56,6 +56,12 @@ export default {
           blue: "hsl(var(--bsu-blue))",
           "light-blue": "hsl(var(--bsu-light-blue))",
         },
+        macro: {
+          cal: "hsl(var(--macro-cal))",
+          protein: "hsl(var(--macro-protein))",
+          carbs: "hsl(var(--macro-carbs))",
+          fat: "hsl(var(--macro-fat))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",

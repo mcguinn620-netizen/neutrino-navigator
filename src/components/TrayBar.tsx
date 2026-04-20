@@ -20,6 +20,7 @@ const TrayBar = () => {
   const remove = useAppStore((s) => s.removeFromTray);
   const clear = useAppStore((s) => s.clearTray);
   const logTray = useAppStore((s) => s.logTray);
+  const goals = useAppStore((s) => s.goals);
   const { toast } = useToast();
 
   const [open, setOpen] = useState(false);
@@ -62,11 +63,11 @@ const TrayBar = () => {
                 {totalItems} item{totalItems > 1 ? "s" : ""} in tray
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0 text-xs font-medium opacity-90">
-              {cal && <span>{Math.round(cal.value)} cal</span>}
-              {protein && <span className="opacity-80">P {Math.round(protein.value)}g</span>}
-              {carbs && <span className="opacity-80">C {Math.round(carbs.value)}g</span>}
-              {fat && <span className="opacity-80">F {Math.round(fat.value)}g</span>}
+            <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-semibold">
+              {cal && <span className="px-2 py-0.5 rounded-full bg-macro-cal text-white">{Math.round(cal.value)}</span>}
+              {protein && <span className="px-2 py-0.5 rounded-full bg-macro-protein text-white">P{Math.round(protein.value)}</span>}
+              {carbs && <span className="px-2 py-0.5 rounded-full bg-macro-carbs text-white">C{Math.round(carbs.value)}</span>}
+              {fat && <span className="px-2 py-0.5 rounded-full bg-macro-fat text-white">F{Math.round(fat.value)}</span>}
             </div>
           </button>
         </div>
@@ -96,25 +97,25 @@ const TrayBar = () => {
                 Clear
               </button>
             </div>
-            <div className="mt-3 flex items-center gap-2 text-[11px] font-medium">
+            <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold flex-wrap">
               {cal && (
-                <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary">
-                  {Math.round(cal.value)} cal
+                <span className="px-2.5 py-1 rounded-full bg-macro-cal text-white">
+                  {Math.round(cal.value)}/{goals.calories} cal
                 </span>
               )}
               {protein && (
-                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
-                  P {Math.round(protein.value)}g
+                <span className="px-2.5 py-1 rounded-full bg-macro-protein text-white">
+                  P {Math.round(protein.value)}/{goals.protein}g
                 </span>
               )}
               {carbs && (
-                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
-                  C {Math.round(carbs.value)}g
+                <span className="px-2.5 py-1 rounded-full bg-macro-carbs text-white">
+                  C {Math.round(carbs.value)}/{goals.carbs}g
                 </span>
               )}
               {fat && (
-                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
-                  F {Math.round(fat.value)}g
+                <span className="px-2.5 py-1 rounded-full bg-macro-fat text-white">
+                  F {Math.round(fat.value)}/{goals.fat}g
                 </span>
               )}
             </div>
@@ -138,24 +139,24 @@ const TrayBar = () => {
                     <p className="text-[11px] text-muted-foreground line-clamp-1">
                       {item.hallName} · {item.stationName}
                     </p>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-semibold">
                       {itemCal && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                        <span className="px-1.5 py-0.5 rounded-full bg-macro-cal text-white">
                           {Math.round(itemCal.value * item.quantity)} cal
                         </span>
                       )}
                       {itemP && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                        <span className="px-1.5 py-0.5 rounded-full bg-macro-protein text-white">
                           P {Math.round(itemP.value * item.quantity)}g
                         </span>
                       )}
                       {itemC && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                        <span className="px-1.5 py-0.5 rounded-full bg-macro-carbs text-white">
                           C {Math.round(itemC.value * item.quantity)}g
                         </span>
                       )}
                       {itemF && (
-                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                        <span className="px-1.5 py-0.5 rounded-full bg-macro-fat text-white">
                           F {Math.round(itemF.value * item.quantity)}g
                         </span>
                       )}

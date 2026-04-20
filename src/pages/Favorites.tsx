@@ -144,24 +144,24 @@ const Favorites = () => {
                                   {item.servingSize}
                                 </p>
                               )}
-                              <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-semibold">
                                 {cal && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                                  <span className="px-1.5 py-0.5 rounded-full bg-macro-cal text-white">
                                     {Math.round(cal.value)} cal
                                   </span>
                                 )}
                                 {p && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                  <span className="px-1.5 py-0.5 rounded-full bg-macro-protein text-white">
                                     P {Math.round(p.value)}g
                                   </span>
                                 )}
                                 {c && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                  <span className="px-1.5 py-0.5 rounded-full bg-macro-carbs text-white">
                                     C {Math.round(c.value)}g
                                   </span>
                                 )}
                                 {f && (
-                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                  <span className="px-1.5 py-0.5 rounded-full bg-macro-fat text-white">
                                     F {Math.round(f.value)}g
                                   </span>
                                 )}
