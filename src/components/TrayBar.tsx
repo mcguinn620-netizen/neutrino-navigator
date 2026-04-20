@@ -41,7 +41,7 @@ const TrayBar = () => {
   return (
     <>
       {/* Floating tray pill, sits just above bottom tab bar */}
-      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+56px)] z-30 px-3 pointer-events-none">
+      <div className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+72px)] z-40 px-3 pointer-events-none">
         <div className="max-w-2xl mx-auto pointer-events-auto animate-fade-in">
           <button
             onClick={() => setOpen(true)}
