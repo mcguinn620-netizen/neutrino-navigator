@@ -30,6 +30,9 @@ const TrayBar = () => {
   const totalItems = tray.reduce((s, t) => s + t.quantity, 0);
   const agg = aggregateNutrients(tray);
   const cal = findInTotals(agg.totals, MACRO_KEYS.calories);
+  const protein = findInTotals(agg.totals, MACRO_KEYS.protein);
+  const carbs = findInTotals(agg.totals, MACRO_KEYS.carbs);
+  const fat = findInTotals(agg.totals, MACRO_KEYS.fat);
 
   const handleLog = (meal: MealType) => {
     logTray(meal);
