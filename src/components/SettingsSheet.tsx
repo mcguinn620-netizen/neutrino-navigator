@@ -59,7 +59,11 @@ const SettingsSheet = () => {
       </button>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="bottom" className="rounded-t-3xl max-h-[90vh] overflow-y-auto pb-safe">
+        <SheetContent
+          side="bottom"
+          className="rounded-t-3xl max-h-[90vh] overflow-y-auto pb-safe"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
           <div className="mx-auto w-10 h-1 rounded-full bg-muted -mt-2 mb-3" />
           <SheetHeader className="mb-5">
             <SheetTitle className="text-xl">Settings</SheetTitle>
