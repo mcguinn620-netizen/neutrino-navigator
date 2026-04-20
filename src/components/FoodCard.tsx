@@ -111,22 +111,22 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(
             {hasMacros && (
               <div className="flex flex-wrap gap-1 pt-0.5">
                 {calories && (
-                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
+                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-macro-cal text-white">
                     {calories} cal
                   </span>
                 )}
                 {protein && (
-                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
+                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-macro-protein text-white">
                     P {protein}
                   </span>
                 )}
                 {carbs && (
-                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
+                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-macro-carbs text-white">
                     C {carbs}
                   </span>
                 )}
                 {fat && (
-                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-medium bg-muted text-muted-foreground border border-border">
+                  <span className="inline-flex items-center rounded-full px-1.5 h-5 text-[10px] font-semibold bg-macro-fat text-white">
                     F {fat}
                   </span>
                 )}
@@ -223,22 +223,22 @@ const FoodCard = forwardRef<HTMLButtonElement, FoodCardProps>(
               {hasMacros && (
                 <div className="flex flex-wrap gap-1.5">
                   {calories && (
-                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-macro-cal text-white">
                       {calories} cal
                     </span>
                   )}
                   {protein && (
-                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-bsu-blue/15 text-bsu-blue border border-bsu-blue/25">
+                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-macro-protein text-white">
                       Protein {protein}
                     </span>
                   )}
                   {carbs && (
-                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-bsu-yellow/25 text-foreground border border-bsu-yellow/40">
+                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-macro-carbs text-white">
                       Carbs {carbs}
                     </span>
                   )}
                   {fat && (
-                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-medium bg-muted text-muted-foreground border border-border">
+                    <span className="inline-flex items-center rounded-full px-2 h-6 text-xs font-semibold bg-macro-fat text-white">
                       Fat {fat}
                     </span>
                   )}
