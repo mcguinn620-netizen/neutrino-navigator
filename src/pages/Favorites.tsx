@@ -127,6 +127,9 @@ const Favorites = () => {
                     <div className="flex flex-col gap-2">
                       {stationGroup.items.map((item) => {
                         const cal = findNutrient(item.nutrients, MACRO_KEYS.calories);
+                        const p = findNutrient(item.nutrients, MACRO_KEYS.protein);
+                        const c = findNutrient(item.nutrients, MACRO_KEYS.carbs);
+                        const f = findNutrient(item.nutrients, MACRO_KEYS.fat);
                         return (
                           <div
                             key={item.foodId}
@@ -136,11 +139,33 @@ const Favorites = () => {
                               <p className="text-sm font-semibold text-foreground line-clamp-1 leading-snug">
                                 {item.name}
                               </p>
-                              <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
-                                {item.servingSize ? `${item.servingSize}` : ""}
-                                {item.servingSize && cal ? " · " : ""}
-                                {cal ? `${Math.round(cal.value)} cal` : ""}
-                              </p>
+                              {item.servingSize && (
+                                <p className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
+                                  {item.servingSize}
+                                </p>
+                              )}
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                                {cal && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                                    {Math.round(cal.value)} cal
+                                  </span>
+                                )}
+                                {p && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                    P {Math.round(p.value)}g
+                                  </span>
+                                )}
+                                {c && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                    C {Math.round(c.value)}g
+                                  </span>
+                                )}
+                                {f && (
+                                  <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                                    F {Math.round(f.value)}g
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                               <button
