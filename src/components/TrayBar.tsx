@@ -30,6 +30,9 @@ const TrayBar = () => {
   const totalItems = tray.reduce((s, t) => s + t.quantity, 0);
   const agg = aggregateNutrients(tray);
   const cal = findInTotals(agg.totals, MACRO_KEYS.calories);
+  const protein = findInTotals(agg.totals, MACRO_KEYS.protein);
+  const carbs = findInTotals(agg.totals, MACRO_KEYS.carbs);
+  const fat = findInTotals(agg.totals, MACRO_KEYS.fat);
 
   const handleLog = (meal: MealType) => {
     logTray(meal);
@@ -59,11 +62,12 @@ const TrayBar = () => {
                 {totalItems} item{totalItems > 1 ? "s" : ""} in tray
               </span>
             </div>
-            {cal && (
-              <span className="text-xs font-medium opacity-90 shrink-0">
-                {Math.round(cal.value)} cal
-              </span>
-            )}
+            <div className="flex items-center gap-2 shrink-0 text-xs font-medium opacity-90">
+              {cal && <span>{Math.round(cal.value)} cal</span>}
+              {protein && <span className="opacity-80">P {Math.round(protein.value)}g</span>}
+              {carbs && <span className="opacity-80">C {Math.round(carbs.value)}g</span>}
+              {fat && <span className="opacity-80">F {Math.round(fat.value)}g</span>}
+            </div>
           </button>
         </div>
       </div>
