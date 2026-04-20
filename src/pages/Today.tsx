@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import PullToRefresh from "@/components/PullToRefresh";
 import { useAppStore, type MealType } from "@/lib/store";
 import {
   aggregateNutrients,
@@ -28,6 +29,13 @@ const Today = () => {
   const setLogQuantity = useAppStore((s) => s.setLogQuantity);
 
   const [microsExpanded, setMicrosExpanded] = useState(false);
+  const [, setRefreshTick] = useState(0);
+
+  const handleRefresh = async () => {
+    // Re-read local store state — no scrape, no network
+    await new Promise((r) => setTimeout(r, 400));
+    setRefreshTick((n) => n + 1);
+  };
 
   const today = new Date();
   const todaysLogs = useMemo(
@@ -57,6 +65,7 @@ const Today = () => {
     <>
       <AppHeader title="Today" subtitle={today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} />
 
+      <PullToRefresh onRefresh={handleRefresh}>
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-4 animate-fade-in">
         {/* Calorie summary */}
         <section className="rounded-3xl bg-card border border-border shadow-card p-5">
@@ -226,6 +235,7 @@ const Today = () => {
           </div>
         )}
       </main>
+      </PullToRefresh>
     </>
   );
 };
