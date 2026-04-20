@@ -166,8 +166,11 @@ const KNOWN_HALLS = [
   // Dinner) are exposed as menuOids via menuListSelectMenu / selectMenu.
   // See scrapeSingleHall's Woodworth probe + processHallMenuList.
   { name: "Woodworth Commons", unitOid: 38 },
-  { name: "Bookmark Cafe", unitOid: 33 },
-  { name: "Tom John Food Shop", unitOid: 35 },
+  // Bookmark Cafe and Tom John Food Shop unit oids shifted after North Dining
+  // (oid 25) and other halls were added on the live NetNutrition site.
+  // Verified live unit oids: Bookmark Cafe = 48, Tom John Food Shop = 52.
+  { name: "Bookmark Cafe", unitOid: 48 },
+  { name: "Tom John Food Shop", unitOid: 52 },
 ];
 
 /** Parse dining halls from the sidebar HTML in the initial page. */
