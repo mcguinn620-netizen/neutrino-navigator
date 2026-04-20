@@ -81,27 +81,51 @@ const TrayBar = () => {
         >
           <div className="px-5 pt-4 pb-3 border-b border-border/60">
             <div className="mx-auto w-10 h-1 rounded-full bg-muted mb-3" />
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
                 <h2 className="text-lg font-bold">Your tray</h2>
                 <p className="text-xs text-muted-foreground">
                   {totalItems} item{totalItems > 1 ? "s" : ""}
-                  {cal && ` · ${Math.round(cal.value)} cal`}
                 </p>
               </div>
               <button
                 onClick={clear}
-                className="text-xs font-medium text-muted-foreground active:text-destructive flex items-center gap-1"
+                className="text-xs font-medium text-muted-foreground active:text-destructive flex items-center gap-1 shrink-0"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Clear
               </button>
+            </div>
+            <div className="mt-3 flex items-center gap-2 text-[11px] font-medium">
+              {cal && (
+                <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary">
+                  {Math.round(cal.value)} cal
+                </span>
+              )}
+              {protein && (
+                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
+                  P {Math.round(protein.value)}g
+                </span>
+              )}
+              {carbs && (
+                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
+                  C {Math.round(carbs.value)}g
+                </span>
+              )}
+              {fat && (
+                <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground/80">
+                  F {Math.round(fat.value)}g
+                </span>
+              )}
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
             {tray.map((item) => {
               const itemCal = findNutrient(item.nutrients, MACRO_KEYS.calories);
+              const itemP = findNutrient(item.nutrients, MACRO_KEYS.protein);
+              const itemC = findNutrient(item.nutrients, MACRO_KEYS.carbs);
+              const itemF = findNutrient(item.nutrients, MACRO_KEYS.fat);
               return (
                 <div
                   key={item.trayId}
@@ -113,8 +137,29 @@ const TrayBar = () => {
                     </p>
                     <p className="text-[11px] text-muted-foreground line-clamp-1">
                       {item.hallName} · {item.stationName}
-                      {itemCal && ` · ${Math.round(itemCal.value * item.quantity)} cal`}
                     </p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                      {itemCal && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {Math.round(itemCal.value * item.quantity)} cal
+                        </span>
+                      )}
+                      {itemP && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                          P {Math.round(itemP.value * item.quantity)}g
+                        </span>
+                      )}
+                      {itemC && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                          C {Math.round(itemC.value * item.quantity)}g
+                        </span>
+                      )}
+                      {itemF && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-secondary text-foreground/70">
+                          F {Math.round(itemF.value * item.quantity)}g
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
